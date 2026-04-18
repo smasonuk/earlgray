@@ -144,7 +144,7 @@ const (
 type Align int
 
 const (
-	AlignStart   Align = iota
+	AlignStart Align = iota
 	AlignCenter
 	AlignEnd
 	AlignStretch
@@ -154,7 +154,7 @@ const (
 type Justify int
 
 const (
-	JustifyStart        Justify = iota
+	JustifyStart Justify = iota
 	JustifyCenter
 	JustifyEnd
 	JustifySpaceBetween
@@ -168,17 +168,17 @@ type Style struct {
 	FlexGrow            int
 	// FlexShrink is reserved for future use and is not currently implemented.
 	FlexShrink int
-	Direction           Direction
-	AlignItems          Align
-	Justify             Justify
-	Padding             Insets
-	Gap                 int
-	Border              Border
-	Foreground          color.Color
-	Background          color.Color
-	Bold                bool
-	Italic              bool
-	Underline           bool
+	Direction  Direction
+	AlignItems Align
+	Justify    Justify
+	Padding    Insets
+	Gap        int
+	Border     Border
+	Foreground color.Color
+	Background color.Color
+	Bold       bool
+	Italic     bool
+	Underline  bool
 }
 
 // Merge returns a new style that inherits unspecified colors from parent.

@@ -14,6 +14,7 @@ func App() tui.Node {
 
 func Form() tui.Node {
 	name, setName := tui.UseState("")
+	submitted, setSubmitted := tui.UseState("")
 
 	greeting := "Hello"
 	if name != "" {
@@ -31,6 +32,7 @@ func Form() tui.Node {
 		tui.TextInput(tui.TextInputProps{
 			Value:       name,
 			OnChange:    setName,
+			OnSubmit:    func(v string) { setSubmitted(v) },
 			Placeholder: "Type your name...",
 			Style: tui.Style{
 				Width:  tui.Cells(30),
@@ -42,7 +44,9 @@ func Form() tui.Node {
 			},
 		}),
 		tui.Text(greeting),
-		tui.Text("Ctrl-C to quit"),
+		tui.Text("Submitted: "+submitted),
+		tui.Text("Help:"),
+		tui.Text("Type to edit. Left/Right/Home/End move cursor. Enter submits. Ctrl-C quits."),
 	)
 }
 

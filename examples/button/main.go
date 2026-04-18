@@ -46,9 +46,9 @@ func ButtonCounter() tui.Node {
 					setCount(count - 1)
 				},
 				Style: tui.Style{
-					Width:   tui.Cells(7),
-					Height:  tui.Cells(3),
-					Border:  tui.BorderAll,
+					Width:  tui.Cells(7),
+					Height: tui.Cells(3),
+					Border: tui.BorderAll,
 				},
 				FocusedStyle: tui.Style{
 					Foreground: tui.ANSIColor(3), // yellow
@@ -60,9 +60,9 @@ func ButtonCounter() tui.Node {
 					setCount(count + 1)
 				},
 				Style: tui.Style{
-					Width:   tui.Cells(7),
-					Height:  tui.Cells(3),
-					Border:  tui.BorderAll,
+					Width:  tui.Cells(7),
+					Height: tui.Cells(3),
+					Border: tui.BorderAll,
 				},
 				FocusedStyle: tui.Style{
 					Foreground: tui.ANSIColor(3), // yellow

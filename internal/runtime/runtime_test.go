@@ -625,8 +625,8 @@ func TestFallbackDeliverySkipsDisabledHandler(t *testing.T) {
 	childHandled := false
 
 	child := &node.Node{
-		Kind:   node.ViewKind,
-		OnKey:  func(kp node.KeyPress) bool { childHandled = true; return true },
+		Kind:  node.ViewKind,
+		OnKey: func(kp node.KeyPress) bool { childHandled = true; return true },
 	}
 	disabled := &node.Node{
 		Kind:     node.ViewKind,

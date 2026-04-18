@@ -17,8 +17,8 @@ import (
 // Instance is a retained node in the component tree.
 // It persists across renders to allow state to be preserved.
 type Instance struct {
-	id      uintptr   // stable identity; set on mount, preserved on reconcile
-	parent  *Instance // parent in the instance tree; nil for root
+	id     uintptr   // stable identity; set on mount, preserved on reconcile
+	parent *Instance // parent in the instance tree; nil for root
 
 	runtime *Runtime // owning runtime; used by UseState setters
 

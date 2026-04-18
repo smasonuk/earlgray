@@ -77,7 +77,10 @@ func TestDiff(t *testing.T) {
 	next := NewBuffer(5, 5)
 	next.SetCell(2, 2, 'X', CellStyle{})
 
-	var calls []struct{ x, y int; ch rune }
+	var calls []struct {
+		x, y int
+		ch   rune
+	}
 	type recorder struct{}
 	rec := &diffRecorder{}
 	Diff(prev, next, rec)
@@ -95,8 +98,12 @@ func TestDiff(t *testing.T) {
 	_ = calls
 }
 
-type diffCall struct{ x, y int; ch rune }
+type diffCall struct {
+	x, y int
+	ch   rune
+}
 type diffRecorder struct{ calls []diffCall }
+
 func (r *diffRecorder) SetCell(x, y int, ch rune, style CellStyle) {
 	r.calls = append(r.calls, diffCall{x, y, ch})
 }

@@ -217,8 +217,8 @@ func TestRenderStyleInheritance(t *testing.T) {
 		},
 		Children: []*node.Node{
 			{
-				Kind: node.TextKind,
-				Text: "x",
+				Kind:     node.TextKind,
+				Text:     "x",
 				TextOpts: node.TextOptions{
 					// No foreground specified, should inherit
 				},
