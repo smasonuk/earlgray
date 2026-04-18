@@ -161,7 +161,7 @@ type ButtonProps struct {
 	FocusedStyle Style
 }
 
-func overlayFocusStyle(base, focus Style) Style {
+func overlayVisualStyle(base, focus Style) Style {
 	out := base
 	if focus.Foreground.IsSpecified() {
 		out.Foreground = focus.Foreground
@@ -182,13 +182,16 @@ func overlayFocusStyle(base, focus Style) Style {
 }
 
 // Button creates a focusable button that responds to Enter and Space.
+//
+// If rendering buttons in a dynamic or reordered list, wrap each Button in Keyed
+// so reconciliation preserves the intended identity.
 func Button(props ButtonProps) Node {
 	return Component(func() Node {
 		focused := UseFocused()
 
 		style := props.Style
 		if focused {
-			style = overlayFocusStyle(props.Style, props.FocusedStyle)
+			style = overlayVisualStyle(props.Style, props.FocusedStyle)
 		}
 
 		return ViewWith(
