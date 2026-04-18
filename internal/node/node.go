@@ -47,19 +47,19 @@ type TextPanelOptions struct {
 
 // Node is the internal concrete node type.
 type Node struct {
-	Kind      Kind
-	Key       string       // optional explicit key for reconciliation
-	Style     style.Style  // style (ViewKind)
-	Children  []*Node      // child nodes (ViewKind, KeyedKind)
-	Text      string       // text content (TextKind)
-	TextOpts  TextOptions  // text options (TextKind)
+	Kind          Kind
+	Key           string           // optional explicit key for reconciliation
+	Style         style.Style      // style (ViewKind)
+	Children      []*Node          // child nodes (ViewKind, KeyedKind)
+	Text          string           // text content (TextKind)
+	TextOpts      TextOptions      // text options (TextKind)
 	TextPanelOpts TextPanelOptions // text panel options (TextPanelKind)
-	CompFn    func() *Node // component render function (ComponentKind)
-	CompID    uintptr      // identity of component function (for reconciliation)
-	OnKey     KeyHandler   // optional key handler (ViewKind)
-	Focusable bool         // whether this node can receive focus
-	AutoFocus bool         // request focus on initial mount if no other node is focused
-	Disabled  bool         // skip in focus traversal and key delivery
+	CompFn        func() *Node     // component render function (ComponentKind)
+	CompID        uintptr          // identity of component function (for reconciliation)
+	OnKey         KeyHandler       // optional key handler (ViewKind)
+	Focusable     bool             // whether this node can receive focus
+	AutoFocus     bool             // request focus on initial mount if no other node is focused
+	Disabled      bool             // skip in focus traversal and key delivery
 
 	// FocusScope traps focus traversal within this view's subtree.
 	FocusScope bool

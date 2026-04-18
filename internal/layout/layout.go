@@ -3,11 +3,11 @@ package layout
 
 import (
 	"strings"
-	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/style"
+	"github.com/smason/earlgray/internal/textflow"
 )
 
 // Constraints bounds the available space for a node.
@@ -581,30 +581,9 @@ func measureChildrenIntrinsic(children []*node.Node, maxW, maxH int, dir style.D
 }
 
 func measureTextPanelIntrinsic(text string, opts node.TextPanelOptions, maxW, maxH int) (w, h int) {
-	if maxW <= 0 {
-		return 0, 0
-	}
-
-	lines := strings.Split(text, "\n")
-
-	if opts.WordWrap {
-		visual := wrapTextPanelLines(text, maxW)
-		h = len(visual)
-		for _, line := range visual {
-			lw := runewidth.StringWidth(line)
-			if lw > w {
-				w = lw
-			}
-		}
-	} else {
-		h = len(lines)
-		for _, line := range lines {
-			lw := runewidth.StringWidth(line)
-			if lw > w {
-				w = lw
-			}
-		}
-	}
+	visual := textflow.VisualLines(text, opts.WordWrap, maxW)
+	h = len(visual)
+	w = textflow.MaxLineWidth(visual)
 
 	if maxW > 0 && w > maxW {
 		w = maxW
@@ -614,66 +593,4 @@ func measureTextPanelIntrinsic(text string, opts node.TextPanelOptions, maxW, ma
 	}
 
 	return w, h
-}
-
-func wrapTextPanelLines(text string, width int) []string {
-	if width <= 0 {
-		return nil
-	}
-	var visual []string
-	logicalLines := strings.Split(text, "\n")
-	for _, line := range logicalLines {
-		if line == "" {
-			visual = append(visual, "")
-			continue
-		}
-
-		words := strings.Split(line, " ")
-		var currentLine string
-		var currentWidth int
-
-		for i, word := range words {
-			wordWidth := runewidth.StringWidth(word)
-
-			// If it's not the first word, try to add a space.
-			if i > 0 {
-				if currentWidth+1+wordWidth <= width {
-					currentLine += " " + word
-					currentWidth += 1 + wordWidth
-					continue
-				} else {
-					// Cannot fit space + word, so finish currentLine and start new.
-					visual = append(visual, currentLine)
-					currentLine = ""
-					currentWidth = 0
-				}
-			}
-
-			// Current word might be longer than width.
-			for runewidth.StringWidth(word) > width {
-				// Hard break the word.
-				idx := 0
-				w := 0
-				for _, r := range word {
-					rw := runewidth.RuneWidth(r)
-					if w+rw > width {
-						break
-					}
-					w += rw
-					idx += len(string(r))
-				}
-				// If width is so small it can't fit a single rune, force one.
-				if idx == 0 && len(word) > 0 {
-					_, size := utf8.DecodeRuneInString(word)
-					idx = size
-				}
-				visual = append(visual, word[:idx])
-				word = word[idx:]
-			}
-			currentLine = word
-			currentWidth = runewidth.StringWidth(word)
-		}
-		visual = append(visual, currentLine)
-	}
-	return visual
 }

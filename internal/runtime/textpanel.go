@@ -1,14 +1,11 @@
 package runtime
 
 import (
-	"strings"
-	"unicode/utf8"
-
-	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/style"
 	"github.com/smason/earlgray/internal/screen"
+	"github.com/smason/earlgray/internal/style"
+	"github.com/smason/earlgray/internal/textflow"
 )
 
 func handleTextPanelKey(inst *Instance, press input.KeyPress) bool {
@@ -23,7 +20,7 @@ func handleTextPanelKey(inst *Instance, press input.KeyPress) bool {
 
 	opts := inst.nd.TextPanelOpts
 	viewportW := textPanelViewportWidth(inst.nd.Text, opts, content.W, content.H)
-	visualLines := textPanelVisualLines(inst.nd.Text, opts.WordWrap, viewportW)
+	visualLines := textflow.VisualLines(inst.nd.Text, opts.WordWrap, viewportW)
 
 	maxY := len(visualLines) - content.H
 	if maxY < 0 {
@@ -32,7 +29,7 @@ func handleTextPanelKey(inst *Instance, press input.KeyPress) bool {
 
 	maxX := 0
 	if !opts.WordWrap {
-		maxX = textPanelMaxLineWidth(visualLines) - viewportW
+		maxX = textflow.MaxLineWidth(visualLines) - viewportW
 		if maxX < 0 {
 			maxX = 0
 		}
@@ -84,84 +81,9 @@ func clampIntRuntime(v, lo, hi int) int {
 	return v
 }
 
-func textPanelVisualLines(text string, wordWrap bool, width int) []string {
-	if wordWrap {
-		return wrapTextPanelLines(text, width)
-	}
-	return strings.Split(text, "\n")
-}
-
-func wrapTextPanelLines(text string, width int) []string {
-	if width <= 0 {
-		return nil
-	}
-	var visual []string
-	logicalLines := strings.Split(text, "\n")
-	for _, line := range logicalLines {
-		if line == "" {
-			visual = append(visual, "")
-			continue
-		}
-
-		words := strings.Split(line, " ")
-		var currentLine string
-		var currentWidth int
-
-		for i, word := range words {
-			wordWidth := runewidth.StringWidth(word)
-
-			if i > 0 {
-				if currentWidth+1+wordWidth <= width {
-					currentLine += " " + word
-					currentWidth += 1 + wordWidth
-					continue
-				} else {
-					visual = append(visual, currentLine)
-					currentLine = ""
-					currentWidth = 0
-				}
-			}
-
-			for runewidth.StringWidth(word) > width {
-				idx := 0
-				w := 0
-				for _, r := range word {
-					rw := runewidth.RuneWidth(r)
-					if w+rw > width {
-						break
-					}
-					w += rw
-					idx += len(string(r))
-				}
-				if idx == 0 && len(word) > 0 {
-					_, size := utf8.DecodeRuneInString(word)
-					idx = size
-				}
-				visual = append(visual, word[:idx])
-				word = word[idx:]
-			}
-			currentLine = word
-			currentWidth = runewidth.StringWidth(word)
-		}
-		visual = append(visual, currentLine)
-	}
-	return visual
-}
-
-func textPanelMaxLineWidth(lines []string) int {
-	max := 0
-	for _, l := range lines {
-		w := runewidth.StringWidth(l)
-		if w > max {
-			max = w
-		}
-	}
-	return max
-}
-
 func textPanelViewportWidth(text string, opts node.TextPanelOptions, contentW, contentH int) int {
 	viewportW := contentW
-	visualLines := textPanelVisualLines(text, opts.WordWrap, viewportW)
+	visualLines := textflow.VisualLines(text, opts.WordWrap, viewportW)
 	overflowY := len(visualLines) > contentH
 	if opts.ShowScrollbar && overflowY && contentW > 1 {
 		viewportW = contentW - 1
@@ -215,14 +137,14 @@ func renderTextPanel(inst *Instance, buf *screen.Buffer, content style.Rect, s s
 	opts := inst.nd.TextPanelOpts
 
 	viewportW := content.W
-	visualLines := textPanelVisualLines(inst.nd.Text, opts.WordWrap, viewportW)
+	visualLines := textflow.VisualLines(inst.nd.Text, opts.WordWrap, viewportW)
 
 	overflowY := len(visualLines) > content.H
 	showScrollbar := opts.ShowScrollbar && overflowY && content.W > 1
 
 	if showScrollbar {
 		viewportW = content.W - 1
-		visualLines = textPanelVisualLines(inst.nd.Text, opts.WordWrap, viewportW)
+		visualLines = textflow.VisualLines(inst.nd.Text, opts.WordWrap, viewportW)
 		overflowY = len(visualLines) > content.H
 		showScrollbar = opts.ShowScrollbar && overflowY && content.W > 1
 	}
@@ -235,7 +157,7 @@ func renderTextPanel(inst *Instance, buf *screen.Buffer, content style.Rect, s s
 
 	maxX := 0
 	if !opts.WordWrap {
-		maxX = textPanelMaxLineWidth(visualLines) - viewportW
+		maxX = textflow.MaxLineWidth(visualLines) - viewportW
 		if maxX < 0 {
 			maxX = 0
 		}

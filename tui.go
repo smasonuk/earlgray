@@ -706,8 +706,8 @@ type RadioOption struct {
 
 // RadioGroupProps configures a RadioGroup widget.
 type RadioGroupProps struct {
-	Options []RadioOption
-	Value   string
+	Options  []RadioOption
+	Value    string
 	OnChange func(string)
 
 	Style        Style
@@ -841,8 +841,8 @@ func RadioGroup(props RadioGroupProps) Node {
 
 // SelectProps configures a Select widget.
 type SelectProps struct {
-	Options []RadioOption
-	Value   string
+	Options  []RadioOption
+	Value    string
 	OnChange func(string)
 
 	Style        Style

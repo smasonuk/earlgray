@@ -348,7 +348,6 @@ func TestTextInputFocusedRequestsCursor(t *testing.T) {
 	inputNode := TextInput(props)
 	updateUntilClean(rt, inputNode)
 
-
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
 	rt.Render(buf)
@@ -2077,7 +2076,6 @@ func TestSelectControlledUpdateRendersNewValue(t *testing.T) {
 	}
 }
 
-
 func TestTextPanelReturnsComponentNode(t *testing.T) {
 	got := TextPanel(TextPanelProps{})
 	if got.Kind != inode.ComponentKind {
@@ -2155,6 +2153,7 @@ func TestTextPanelUpAtTopReturnsFalse(t *testing.T) {
 	})
 
 	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
 
 	consumed := rt.HandleEvent(event.Event{
 		Kind: event.KeyKind,
@@ -2170,7 +2169,7 @@ func TestDisabledTextPanelDoesNotScroll(t *testing.T) {
 	rt := runtime.New()
 
 	root := TextPanel(TextPanelProps{
-		Text:      "one\ntwo\nthree",
+		Text:     "one\ntwo\nthree",
 		Disabled: true,
 		Style: Style{
 			Width:  Cells(10),
@@ -2223,7 +2222,7 @@ func TestTextPanelNoWrapRightScrollsHorizontally(t *testing.T) {
 
 	root := TextPanel(TextPanelProps{
 		Text:      "abcdef",
-		WordWrap: false,
+		WordWrap:  false,
 		AutoFocus: true,
 		Style: Style{
 			Width:  Cells(3),
@@ -2249,5 +2248,314 @@ func TestTextPanelNoWrapRightScrollsHorizontally(t *testing.T) {
 
 	if got := buf.At(0, 0).Rune; got != 'b' {
 		t.Fatalf("after horizontal scroll, first visible rune = %q, want 'b'", got)
+	}
+}
+
+func TestTextPanelScrollbarAppearsWhenOverflowing(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:          "1\n2\n3",
+		ShowScrollbar: true,
+		Style: Style{
+			Width:  Cells(5),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Scrollbar should be at x=4. Thumb '█' at y=0, Track '│' at y=1.
+	r0 := buf.At(4, 0).Rune
+	if r0 != '█' {
+		t.Errorf("expected thumb '█' at x=4, y=0, got %q", r0)
+	}
+	r1 := buf.At(4, 1).Rune
+	if r1 != '│' {
+		t.Errorf("expected track '│' at x=4, y=1, got %q", r1)
+	}
+}
+
+func TestTextPanelScrollbarNotShownWhenContentFits(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:          "1\n2",
+		ShowScrollbar: true,
+		Style: Style{
+			Width:  Cells(5),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	r := buf.At(4, 0).Rune
+	if r != ' ' && r != 0 {
+		t.Errorf("expected no scrollbar at x=4, got %q", r)
+	}
+}
+
+func TestTextPanelScrollbarThumbMovesAfterScroll(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:          "1\n2\n3",
+		ShowScrollbar: true,
+		AutoFocus:     true,
+		Style: Style{
+			Width:  Cells(5),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	// Scroll down.
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDown}})
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Thumb should move to y=1.
+	r1 := buf.At(4, 1).Rune
+	if r1 != '█' {
+		t.Errorf("expected thumb '█' at x=4, y=1 after scroll, got %q", r1)
+	}
+}
+
+func TestTextPanelScrollbarReducesWrapWidth(t *testing.T) {
+	rt := runtime.New()
+	// Text "12345" at width 5.
+	// Without scrollbar, it fits on one line.
+	// With scrollbar (overflowing vertically), viewportW becomes 4.
+	// "12345" will wrap into "1234", "5".
+	root := TextPanel(TextPanelProps{
+		Text:          "12345\n2\n3",
+		ShowScrollbar: true,
+		WordWrap:      true,
+		Style: Style{
+			Width:  Cells(5),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// First line should be "1234".
+	if got := buf.At(3, 0).Rune; got != '4' {
+		t.Errorf("expected '4' at (3,0), got %q", got)
+	}
+	// Scrollbar at x=4.
+	if r := buf.At(4, 0).Rune; r != '█' && r != '│' {
+		t.Errorf("expected scrollbar at x=4, got %q", r)
+	}
+}
+
+func TestTextPanelPageDownScrollsByViewportHeight(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "1\n2\n3\n4\n5",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyPgDn}})
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if r := buf.At(0, 0).Rune; r != '3' {
+		t.Errorf("expected '3' at (0,0) after PgDn, got %q", r)
+	}
+}
+
+func TestTextPanelPageUpScrollsByViewportHeight(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "1\n2\n3\n4\n5",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	// Go to bottom.
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnd}})
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	// PageUp.
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyPgUp}})
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if r := buf.At(0, 0).Rune; r != '2' {
+		t.Errorf("expected '2' at (0,0) after PageUp from bottom, got %q", r)
+	}
+}
+
+func TestTextPanelHomeEnd(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "1\n2\n3\n4\n5",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnd}})
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	if r := buf.At(0, 0).Rune; r != '4' {
+		t.Errorf("expected '4' at (0,0) after End, got %q", r)
+	}
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
+	rt.RunLayout(80, 24)
+	buf = screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	if r := buf.At(0, 0).Rune; r != '1' {
+		t.Errorf("expected '1' at (0,0) after Home, got %q", r)
+	}
+}
+
+func TestTextPanelDownAtBottomReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "1\n2",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDown}})
+	if consumed {
+		t.Error("Down at bottom should return false")
+	}
+}
+
+func TestTextPanelRightAtEndReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "abcdef",
+		AutoFocus: true,
+		WordWrap:  false,
+		Style: Style{
+			Width:  Cells(3),
+			Height: Cells(1),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	// Scroll to end.
+	for i := 0; i < 3; i++ {
+		rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	}
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	if consumed {
+		t.Error("Right at end should return false")
+	}
+}
+
+func TestTextPanelLeftAtStartReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "abcdef",
+		AutoFocus: true,
+		WordWrap:  false,
+		Style: Style{
+			Width:  Cells(3),
+			Height: Cells(1),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
+	if consumed {
+		t.Error("Left at start should return false")
+	}
+}
+
+func TestTextPanelLeftRightIgnoredWhenWordWrapEnabled(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "long line",
+		AutoFocus: true,
+		WordWrap:  true,
+		Style: Style{
+			Width:  Cells(5),
+			Height: Cells(1),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	if consumed {
+		t.Error("Right should be ignored when WordWrap is enabled")
+	}
+}
+
+func TestTextPanelHorizontalScrollDoesNotRenderPartialWideRune(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "世abc",
+		WordWrap:  false,
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(3),
+			Height: Cells(1),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if r := buf.At(0, 0).Rune; r != ' ' && r != 0 {
+		t.Errorf("expected blank at (0,0) to avoid partial wide rune, got %q", r)
+	}
+	if r := buf.At(1, 0).Rune; r != 'a' {
+		t.Errorf("expected 'a' at (1,0), got %q", r)
 	}
 }

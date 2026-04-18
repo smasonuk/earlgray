@@ -144,7 +144,7 @@ func buildSyntheticNode(inst *Instance) *node.Node {
 			synth.Children[i] = buildSyntheticNode(child)
 		}
 		return &synth
-	default: // TextKind
+	default: // TextKind, TextPanelKind
 		return inst.nd
 	}
 }

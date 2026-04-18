@@ -396,13 +396,13 @@ func TestRenderOverlayDrawsLaterChildOnTop(t *testing.T) {
 		Kind: node.OverlayKind,
 		Children: []*node.Node{
 			{
-				Kind: node.ViewKind,
-				Style: style.Style{Width: style.Cells(1), Height: style.Cells(1)},
+				Kind:     node.ViewKind,
+				Style:    style.Style{Width: style.Cells(1), Height: style.Cells(1)},
 				Children: []*node.Node{{Kind: node.TextKind, Text: "A"}},
 			},
 			{
-				Kind: node.ViewKind,
-				Style: style.Style{Width: style.Cells(1), Height: style.Cells(1)},
+				Kind:     node.ViewKind,
+				Style:    style.Style{Width: style.Cells(1), Height: style.Cells(1)},
 				Children: []*node.Node{{Kind: node.TextKind, Text: "B"}},
 			},
 		},
