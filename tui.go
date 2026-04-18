@@ -2,6 +2,8 @@ package tui
 
 import (
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -311,6 +313,122 @@ func UseRouter(initial string) Router {
 			return true
 		},
 	}
+}
+
+var DefaultSpinnerFrames = []string{
+	"⠋", "⠙", "⠹", "⠸", "⠼",
+	"⠴", "⠦", "⠧", "⠇", "⠏",
+}
+
+const DefaultSpinnerInterval = 100 * time.Millisecond
+
+// SpinnerProps configures the built-in spinner widget.
+type SpinnerProps struct {
+	Frames   []string
+	Label    string
+	Style    Style
+	Active   bool
+	Interval time.Duration
+}
+
+func spinnerFrames(props SpinnerProps) []string {
+	if len(props.Frames) > 0 {
+		return props.Frames
+	}
+	return DefaultSpinnerFrames
+}
+
+func spinnerFramesKey(frames []string) string {
+	var b strings.Builder
+	for _, frame := range frames {
+		b.WriteString(strconv.Itoa(len(frame)))
+		b.WriteRune(':')
+		b.WriteString(frame)
+		b.WriteRune(';')
+	}
+	return b.String()
+}
+
+// Spinner renders a text spinner that can animate while active.
+func Spinner(props SpinnerProps) Node {
+	return Component(func() Node {
+		frames := spinnerFrames(props)
+		frameCount := len(frames)
+
+		frameIndex, _, setFrameIndexGuarded := runtime.UseStateGuarded(0)
+		generation := runtime.UseRef(0)
+
+		interval := props.Interval
+		if interval <= 0 {
+			interval = DefaultSpinnerInterval
+		}
+
+		active := props.Active
+		framesKey := spinnerFramesKey(frames)
+
+		UseEffect(func() func() {
+			if !active || frameCount <= 1 {
+				return nil
+			}
+
+			stop := make(chan struct{})
+			var stopped atomic.Bool
+			(*generation)++
+			gen := *generation
+			i := 0
+			if frameCount > 0 {
+				i = frameIndex % frameCount
+			}
+
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+
+				for {
+					select {
+					case <-ticker.C:
+						if stopped.Load() {
+							return
+						}
+						next := (i + 1) % frameCount
+						i = next
+						setFrameIndexGuarded(next, func() bool {
+							return *generation == gen
+						})
+					case <-stop:
+						return
+					}
+				}
+			}()
+
+			return func() {
+				stopped.Store(true)
+				(*generation)++
+				close(stop)
+			}
+		}, active, interval, framesKey)
+
+		displayIndex := 0
+		if frameCount > 0 {
+			displayIndex = frameIndex % frameCount
+		}
+
+		frame := ""
+		if frameCount > 0 {
+			frame = frames[displayIndex]
+		}
+
+		text := frame
+		if props.Label != "" {
+			if text == "" {
+				text = props.Label
+			} else {
+				text += " " + props.Label
+			}
+		}
+
+		return Text(text, WithTextStyle(props.Style))
+	})
 }
 
 // ButtonProps configures a Button widget.
@@ -1315,6 +1433,7 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 	}
 
 	rt := runtime.New()
+	rt.SetPost(handle.Post)
 	defer rt.Dispose()
 	w, h2 := h.Size()
 
@@ -1341,6 +1460,20 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 			prev = doRender(prev)
 			if !rt.IsDirty() {
 				return prev
+			}
+		}
+	}
+
+	drainAppEvents := func() {
+		for {
+			select {
+			case fn := <-appEvents:
+				if fn != nil {
+					fn()
+					rt.MarkDirty()
+				}
+			default:
+				return
 			}
 		}
 	}
@@ -1396,6 +1529,8 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 				}
 			}
 		}
+
+		drainAppEvents()
 
 		if rt.IsDirty() {
 			prev = renderUntilClean(prev)

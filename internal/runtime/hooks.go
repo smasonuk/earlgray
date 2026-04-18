@@ -37,6 +37,31 @@ func IsFocused() bool {
 // UseState implements React-like state hooks.
 // T must match the type used when the hook slot was first initialized.
 func UseState[T any](initial T) (T, func(T)) {
+	inst, idx, val := bindStateHook(initial)
+
+	setter := func(v T) {
+		enqueueStateUpdate(inst, idx, v, nil)
+	}
+
+	return val, setter
+}
+
+// UseStateGuarded is an internal variant of UseState that can drop queued
+// updates if a guard fails when the update is applied on the app loop.
+func UseStateGuarded[T any](initial T) (T, func(T), func(T, func() bool)) {
+	inst, idx, val := bindStateHook(initial)
+
+	setter := func(v T) {
+		enqueueStateUpdate(inst, idx, v, nil)
+	}
+	guardedSetter := func(v T, guard func() bool) {
+		enqueueStateUpdate(inst, idx, v, guard)
+	}
+
+	return val, setter, guardedSetter
+}
+
+func bindStateHook[T any](initial T) (*Instance, int, T) {
 	if renderingInstance == nil {
 		panic("tui: UseState called outside component render")
 	}
@@ -57,8 +82,21 @@ func UseState[T any](initial T) (T, func(T)) {
 	}
 
 	val := slot.state.(T)
+	return inst, idx, val
+}
 
-	setter := func(v T) {
+func enqueueStateUpdate[T any](inst *Instance, idx int, v T, guard func() bool) {
+	rt := inst.runtime
+	if rt == nil {
+		return
+	}
+	rt.enqueue(func() {
+		if !isInstanceMounted(rt.root, inst) {
+			return
+		}
+		if guard != nil && !guard() {
+			return
+		}
 		if idx < 0 || idx >= len(inst.hookSlots) {
 			return
 		}
@@ -67,10 +105,8 @@ func UseState[T any](initial T) (T, func(T)) {
 			return
 		}
 		slot.state = v
-		inst.runtime.MarkDirty()
-	}
-
-	return val, setter
+		rt.MarkDirty()
+	})
 }
 
 // UseEffect registers a component-local side effect.
@@ -109,6 +145,34 @@ func UseEffect(effect func() func(), deps ...any) {
 		slot.effect.deps = nextDeps
 		inst.runtime.enqueueEffect(inst, idx, effect)
 	}
+}
+
+// UseRef returns a stable pointer for component-local mutable state that does
+// not itself trigger rerenders when mutated.
+func UseRef[T any](initial T) *T {
+	if renderingInstance == nil {
+		panic("tui: UseRef called outside component render")
+	}
+
+	inst := renderingInstance
+	idx := inst.hookIdx
+	inst.hookIdx++
+
+	if idx >= len(inst.hookSlots) {
+		v := new(T)
+		*v = initial
+		inst.hookSlots = append(inst.hookSlots, hookSlot{
+			kind:  hookRef,
+			state: v,
+		})
+	}
+
+	slot := &inst.hookSlots[idx]
+	if slot.kind != hookRef {
+		panic("tui: hook order changed: UseRef called where another hook type was previously used")
+	}
+
+	return slot.state.(*T)
 }
 
 func copyDeps(deps []any) []any {

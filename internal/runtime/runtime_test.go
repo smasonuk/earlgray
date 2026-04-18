@@ -168,6 +168,45 @@ func TestUseStatePanicsOutsideRender(t *testing.T) {
 	UseState(0)
 }
 
+func TestUseStateGuardedDropsStaleQueuedUpdate(t *testing.T) {
+	rt := New()
+	queue := []func(){}
+	rt.SetPost(func(fn func()) {
+		queue = append(queue, fn)
+	})
+
+	allow := true
+	count := 0
+	var setCountGuarded func(int, func() bool)
+
+	compFn := func() *node.Node {
+		c, _, guardedSetter := UseStateGuarded(0)
+		count = c
+		setCountGuarded = guardedSetter
+		return textND("count")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1014}
+	rt.Update(n)
+
+	setCountGuarded(1, func() bool { return allow })
+	allow = false
+
+	if len(queue) != 1 {
+		t.Fatalf("queued updates = %d, want 1", len(queue))
+	}
+
+	queue[0]()
+
+	if rt.IsDirty() {
+		rt.Update(n)
+	}
+
+	if count != 0 {
+		t.Fatalf("count = %d, want 0", count)
+	}
+}
+
 func TestUseEffectPanicsOutsideRender(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
@@ -485,6 +524,30 @@ func TestRuntimeDisposeRunsEffectCleanup(t *testing.T) {
 	if cleanupRuns != 1 {
 		t.Fatalf("cleanupRuns = %d, want 1", cleanupRuns)
 	}
+}
+
+func TestFewerHooksOnLaterRenderPanics(t *testing.T) {
+	rt := New()
+	enabled := true
+
+	compFn := func() *node.Node {
+		UseState(0)
+		if enabled {
+			UseEffect(func() func() { return nil })
+		}
+		return textND("hooks")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1013}
+	rt.Update(n)
+
+	enabled = false
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic when fewer hooks are called")
+		}
+	}()
+	rt.Update(n)
 }
 
 func TestConditionalHookCausesTypeMismatchPanic(t *testing.T) {

@@ -72,6 +72,7 @@ type hookKind int
 const (
 	hookState hookKind = iota
 	hookEffect
+	hookRef
 )
 
 type hookSlot struct {
@@ -105,6 +106,7 @@ type Runtime struct {
 	scopeStack []focusScopeFrame
 
 	pendingEffects []pendingEffect
+	post           func(func())
 
 	lastMouseButtons input.MouseButton
 }
@@ -117,6 +119,11 @@ func New() *Runtime {
 // MarkDirty schedules a re-render.
 func (r *Runtime) MarkDirty() {
 	r.dirty = true
+}
+
+// SetPost configures an optional callback used to marshal work onto the app loop.
+func (r *Runtime) SetPost(post func(func())) {
+	r.post = post
 }
 
 // IsDirty reports whether a re-render is needed.
@@ -145,6 +152,17 @@ func (r *Runtime) Focused() *Instance {
 // visible is false if no node requested a cursor.
 func (r *Runtime) Cursor() (x, y int, visible bool) {
 	return r.cursor.x, r.cursor.y, r.cursor.visible
+}
+
+func (r *Runtime) enqueue(fn func()) {
+	if fn == nil {
+		return
+	}
+	if r.post != nil {
+		r.post(fn)
+		return
+	}
+	fn()
 }
 
 func (r *Runtime) enqueueEffect(inst *Instance, idx int, effect func() func()) {
@@ -850,7 +868,11 @@ func renderComponent(inst *Instance, n *node.Node) *node.Node {
 	prev := renderingInstance
 	renderingInstance = inst
 	defer func() { renderingInstance = prev }()
-	return n.CompFn()
+	child := n.CompFn()
+	if inst.hookIdx < len(inst.hookSlots) {
+		panic("tui: hook order changed: fewer hooks called than previous render")
+	}
+	return child
 }
 
 func isInstanceMounted(root, target *Instance) bool {

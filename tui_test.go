@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf8"
 
@@ -1599,6 +1600,75 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 func updateUntilClean(rt *runtime.Runtime, root Node) {
 	for rt.IsDirty() {
 		rt.Update(root)
+	}
+}
+
+func renderText(rt *runtime.Runtime, root Node, w, h int) string {
+	updateUntilClean(rt, root)
+	rt.RunLayout(w, h)
+
+	buf := screen.NewBuffer(w, h)
+	rt.Render(buf)
+
+	runes := make([]rune, w)
+	for x := 0; x < w; x++ {
+		runes[x] = buf.At(x, 0).Rune
+	}
+	return string(runes)
+}
+
+func TestSpinnerDefaultRenderWithLabel(t *testing.T) {
+	rt := runtime.New()
+	got := renderText(rt, Spinner(SpinnerProps{
+		Active: false,
+		Label:  "Loading",
+	}), 40, 1)
+
+	want := "⠋ Loading"
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("spinner text = %q, want prefix %q", got, want)
+	}
+}
+
+func TestSpinnerCustomFramesWithoutLabel(t *testing.T) {
+	rt := runtime.New()
+	got := renderText(rt, Spinner(SpinnerProps{
+		Frames: []string{"-"},
+		Active: false,
+	}), 10, 1)
+
+	if got[0:1] != "-" {
+		t.Fatalf("spinner text = %q, want %q", got, "-")
+	}
+}
+
+func TestSpinnerAppliesStyleToText(t *testing.T) {
+	rt := runtime.New()
+	root := Spinner(SpinnerProps{
+		Active: false,
+		Label:  "Loading",
+		Style:  Style{Bold: true, Foreground: ANSIColor(3)},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(40, 1)
+	buf := screen.NewBuffer(40, 1)
+	rt.Render(buf)
+
+	if !buf.At(0, 0).Style.Bold {
+		t.Fatal("expected spinner text to be bold")
+	}
+	if got := buf.At(0, 0).Style.Fg; got != ANSIColor(3) {
+		t.Fatalf("spinner foreground = %v, want %v", got, ANSIColor(3))
+	}
+}
+
+func TestSpinnerFramesKeyNoSeparatorCollision(t *testing.T) {
+	a := spinnerFramesKey([]string{"a", "b"})
+	b := spinnerFramesKey([]string{"a\x00b"})
+
+	if a == b {
+		t.Fatalf("expected distinct keys, got %q", a)
 	}
 }
 
