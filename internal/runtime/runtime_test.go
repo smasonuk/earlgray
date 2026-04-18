@@ -999,6 +999,124 @@ func TestFocusScopeFallsBackWhenPreviousFocusDisabled(t *testing.T) {
 	}
 }
 
+// --- Ticket 6: Nested focus scope tests ---
+
+func TestNestedFocusScopeRestoresOuterScopeOnInnerClose(t *testing.T) {
+	rt := New()
+
+	bg := focusableND()
+	outerOpener := focusableND()
+	outerOther := focusableND()
+	innerChild := focusableND()
+
+	// Setup: bg + outer scope (outerOpener + outerOther) + inner scope (innerChild)
+	rt.Update(viewND(bg, focusScopeND(outerOpener, outerOther, focusScopeND(innerChild))))
+
+	// Focus should land in the inner scope (deepest/topmost).
+	if rt.focused != rt.root.children[1].children[2].children[0] {
+		t.Fatal("focus should be in inner scope initially")
+	}
+
+	// Close inner scope; outer scope remains.
+	rt.Update(viewND(bg, focusScopeND(outerOpener, outerOther)))
+
+	// Focus should restore to something inside the outer scope (not bg).
+	outerScope := rt.root.children[1]
+	innerFocusable := collectFocusable(outerScope)
+	found := false
+	for _, inst := range innerFocusable {
+		if inst == rt.focused {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("focus should be inside the outer scope after closing inner scope")
+	}
+	if rt.focused == rt.root.children[0] {
+		t.Error("focus must not escape to background when outer scope is still active")
+	}
+}
+
+func TestNestedFocusScopeRestoresToBackgroundWhenBothClose(t *testing.T) {
+	rt := New()
+
+	bg := focusableND()
+	outerChild := focusableND()
+	innerChild := focusableND()
+
+	rt.Update(viewND(bg))
+	rt.focused = rt.root.children[0] // bg focused
+
+	// Open outer scope.
+	rt.Update(viewND(bg, focusScopeND(outerChild)))
+	if rt.focused != rt.root.children[1].children[0] {
+		t.Fatal("focus should move into outer scope")
+	}
+
+	// Open inner scope inside outer.
+	rt.Update(viewND(bg, focusScopeND(outerChild, focusScopeND(innerChild))))
+	if rt.focused != rt.root.children[1].children[1].children[0] {
+		t.Fatal("focus should move into inner scope")
+	}
+
+	// Close both scopes.
+	rt.Update(viewND(bg))
+
+	if rt.focused != rt.root.children[0] {
+		t.Fatal("focus should restore to background when both scopes close")
+	}
+}
+
+func TestNestedFocusScopeFallsBackWhenRestoreTargetRemoved(t *testing.T) {
+	rt := New()
+
+	bg := focusableND()
+	outerOpener := focusableND()
+	innerChild := focusableND()
+
+	rt.Update(viewND(bg, outerOpener))
+	rt.focused = rt.root.children[1] // outerOpener
+
+	// Open outer scope.
+	rt.Update(viewND(bg, outerOpener, focusScopeND(innerChild)))
+	if rt.focused != rt.root.children[2].children[0] {
+		t.Fatal("focus should move into scope")
+	}
+
+	// Close scope, remove outerOpener simultaneously.
+	rt.Update(viewND(bg))
+
+	// outerOpener is gone, focus should fall back to bg.
+	if rt.focused != rt.root.children[0] {
+		t.Fatal("focus should fall back to bg when restore target removed")
+	}
+}
+
+func TestNestedFocusScopeFallsBackWhenRestoreTargetDisabled(t *testing.T) {
+	rt := New()
+
+	bg := focusableND()
+	opener := focusableND()
+	scopeChild := focusableND()
+
+	rt.Update(viewND(bg, opener))
+	rt.focused = rt.root.children[1]
+
+	rt.Update(viewND(bg, opener, focusScopeND(scopeChild)))
+	if rt.focused != rt.root.children[2].children[0] {
+		t.Fatal("focus should move into scope")
+	}
+
+	// Close scope; opener becomes disabled.
+	rt.Update(viewND(bg, disabledFocusableND()))
+
+	// opener is disabled, focus falls back to bg.
+	if rt.focused != rt.root.children[0] {
+		t.Fatal("focus should fall back to bg when restore target is disabled")
+	}
+}
+
 func TestRunLayoutComponentRootFlexGrowParticipatesInParentLayout(t *testing.T) {
 	compFn := func() *node.Node {
 		return &node.Node{

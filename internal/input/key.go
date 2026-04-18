@@ -39,3 +39,22 @@ type KeyPress struct {
 	Rune rune
 	Mod  Mod
 }
+
+// MouseButton identifies which mouse button or wheel direction was activated.
+type MouseButton int
+
+const (
+	MouseNone      MouseButton = 0
+	MouseLeft      MouseButton = 1 << 0
+	MouseMiddle    MouseButton = 1 << 1
+	MouseRight     MouseButton = 1 << 2
+	MouseWheelUp   MouseButton = 1 << 3
+	MouseWheelDown MouseButton = 1 << 4
+)
+
+// MousePress holds data delivered to an OnMouse handler.
+type MousePress struct {
+	X, Y   int
+	Button MouseButton
+	Mod    Mod
+}

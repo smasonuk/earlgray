@@ -85,10 +85,26 @@ func View(s Style, children ...Node) Node {
 	}
 }
 
+// MouseButton identifies which mouse button or wheel direction was activated.
+type MouseButton = input.MouseButton
+
+const (
+	MouseNone      = input.MouseNone
+	MouseLeft      = input.MouseLeft
+	MouseMiddle    = input.MouseMiddle
+	MouseRight     = input.MouseRight
+	MouseWheelUp   = input.MouseWheelUp
+	MouseWheelDown = input.MouseWheelDown
+)
+
+// MouseEvent holds data for a mouse handler.
+type MouseEvent = input.MousePress
+
 // ViewProps configures a View node with event handlers and focus.
 type ViewProps struct {
 	Style     Style
 	OnKey     func(KeyEvent) bool
+	OnMouse   func(MouseEvent) bool
 	Focusable bool
 	AutoFocus bool
 	Disabled  bool
@@ -104,6 +120,7 @@ func ViewWith(props ViewProps, children ...Node) Node {
 		Style:      props.Style,
 		Children:   children,
 		OnKey:      props.OnKey,
+		OnMouse:    props.OnMouse,
 		Focusable:  props.Focusable,
 		AutoFocus:  props.AutoFocus,
 		Disabled:   props.Disabled,
@@ -286,6 +303,13 @@ func Button(props ButtonProps) Node {
 						if props.OnPress == nil {
 							return false
 						}
+						props.OnPress()
+						return true
+					}
+					return false
+				},
+				OnMouse: func(ev MouseEvent) bool {
+					if ev.Button&MouseLeft != 0 && !props.Disabled && props.OnPress != nil {
 						props.OnPress()
 						return true
 					}
@@ -999,8 +1023,24 @@ func TextPanel(props TextPanelProps) Node {
 
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
 // The root function is called on every render to produce the new node tree.
+type hostFactory func() (host.Host, error)
+
+// Run starts the TUI event loop, rendering root on each update until Ctrl-C or
+// the terminal closes.
 func Run(root func() Node) error {
-	h, err := host.NewTcellHost()
+	return runWithHost(root, func() (host.Host, error) {
+		h, err := host.NewTcellHost()
+		if err != nil {
+			return nil, err
+		}
+		return h, nil
+	})
+}
+
+// runWithHost is the testable core of Run. It accepts a host factory so tests
+// can inject a fake host without requiring a real terminal.
+func runWithHost(root func() Node, newHost hostFactory) error {
+	h, err := newHost()
 	if err != nil {
 		return err
 	}
@@ -1028,12 +1068,17 @@ func Run(root func() Node) error {
 		return next
 	}
 
-	// Initial render. ensureFocus inside Update may set dirty if focusable
-	// nodes were found, requiring a second render to reflect focus state.
-	prev := doRender(nil)
-	if rt.IsDirty() {
-		prev = doRender(prev)
+	// Render repeatedly until stable, so ensureFocus dirty cycles settle.
+	renderUntilClean := func(prev *screen.Buffer) *screen.Buffer {
+		for {
+			prev = doRender(prev)
+			if !rt.IsDirty() {
+				return prev
+			}
+		}
 	}
+
+	prev := renderUntilClean(nil)
 
 	for {
 		ev := h.PollEvent()
@@ -1049,10 +1094,12 @@ func Run(root func() Node) error {
 				return nil
 			}
 			rt.HandleEvent(ev)
+		case event.MouseKind:
+			rt.HandleEvent(ev)
 		}
 
 		if rt.IsDirty() {
-			prev = doRender(prev)
+			prev = renderUntilClean(prev)
 		}
 	}
 }

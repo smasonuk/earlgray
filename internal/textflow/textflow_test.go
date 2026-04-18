@@ -144,3 +144,60 @@ func TestWrapLinesCurrentWhitespaceBehavior(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+// TestWrapLinesDoubleSpaceBreak verifies that double spaces at a word boundary
+// are consumed at the break point (the emitted line has no trailing spaces).
+func TestWrapLinesDoubleSpaceBreak(t *testing.T) {
+	got := WrapLines("alpha  beta", 7)
+	want := []string{"alpha", "beta"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestWrapLinesWideRuneNotSplit verifies that a wide rune is never placed at a
+// position where it would be partially cut off.
+func TestWrapLinesWideRuneNotSplit(t *testing.T) {
+	got := WrapLines("界界界", 4)
+	want := []string{"界界", "界"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestWrapLinesMixedASCIIAndWide verifies wrapping of mixed-width content.
+func TestWrapLinesMixedASCIIAndWide(t *testing.T) {
+	got := WrapLines("a界b", 3)
+	want := []string{"a界", "b"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestWrapLinesTrailingSpacesPreserved verifies that trailing spaces in a line
+// that fits entirely within the width are preserved as-is.
+func TestWrapLinesTrailingSpacesPreserved(t *testing.T) {
+	got := WrapLines("hello   ", 10)
+	want := []string{"hello   "}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+// TestWrapLinesLeadingSpacesHardBreak verifies that a line with leading spaces
+// and no interior word boundary is hard-broken at the width limit, preserving
+// leading whitespace at the start of the line.
+func TestWrapLinesLeadingSpacesHardBreak(t *testing.T) {
+	// "  indented" has no space after non-space content within 6 cells, so it
+	// hard-breaks, preserving the leading spaces in the first segment.
+	got := WrapLines("  indented", 6)
+	want := []string{"  inde", "nted"}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

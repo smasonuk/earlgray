@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/smason/earlgray"
+	tui "github.com/smason/earlgray"
 )
 
 func main() {

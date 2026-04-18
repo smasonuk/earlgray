@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/smason/earlgray"
+	tui "github.com/smason/earlgray"
 )
 
 // App renders a classic three-pane layout: header, sidebar, main content.

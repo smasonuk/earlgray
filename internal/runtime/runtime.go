@@ -59,6 +59,12 @@ type cursorState struct {
 	x, y    int
 }
 
+// focusScopeFrame tracks one level of focus scope nesting.
+type focusScopeFrame struct {
+	scope     *Instance // the scope instance
+	restoreTo *Instance // the focused instance before this scope was entered
+}
+
 // Runtime manages the component tree lifecycle.
 type Runtime struct {
 	root  *Instance
@@ -68,9 +74,9 @@ type Runtime struct {
 	focused *Instance   // currently focused instance (Focusable node), or nil
 	cursor  cursorState // cursor position requested during the last Render
 
-	activeScope      *Instance // the focus scope active as of the last ensureFocus call
-	focusBeforeScope *Instance // focused instance recorded when the single active scope opened;
-	// only handles one level of nesting — a stack would be needed for nested scopes
+	// scopeStack tracks nested focus scopes. Each frame records the scope instance
+	// and what was focused before entering that scope.
+	scopeStack []focusScopeFrame
 }
 
 // New creates a new Runtime.
@@ -177,10 +183,18 @@ func normalizeMod(m tcell.ModMask) input.Mod {
 	return out
 }
 
-// HandleEvent delivers a keyboard event to the runtime.
+// HandleEvent delivers an event to the runtime.
 // Returns true if the event was consumed.
 func (r *Runtime) HandleEvent(ev event.Event) bool {
-	if ev.Kind != event.KeyKind || r.root == nil {
+	if r.root == nil {
+		return false
+	}
+
+	if ev.Kind == event.MouseKind {
+		return r.handleMouse(ev.Mouse)
+	}
+
+	if ev.Kind != event.KeyKind {
 		return false
 	}
 
@@ -228,6 +242,87 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 
 	// No focused node: fall back to depth-first delivery within the active focus scope.
 	return deliverKey(activeFocusRoot(r.root), ev.Key)
+}
+
+// handleMouse dispatches a mouse event: hit-tests, focuses clicked nodes,
+// scrolls TextPanels on wheel events, and bubbles OnMouse handlers.
+func (r *Runtime) handleMouse(m event.Mouse) bool {
+	focusRoot := activeFocusRoot(r.root)
+	hit := hitTest(focusRoot, m.X, m.Y)
+	if hit == nil {
+		return false
+	}
+
+	consumed := false
+
+	// Left click: focus the hit node if it is focusable.
+	if m.Button&input.MouseLeft != 0 {
+		if hit.nd != nil && hit.nd.Focusable && !hit.nd.Disabled {
+			if r.focused != hit {
+				r.focused = hit
+				r.dirty = true
+				consumed = true
+			}
+		}
+	}
+
+	// Wheel: scroll the hit TextPanel (or nearest ancestor TextPanel).
+	if m.Button&(input.MouseWheelUp|input.MouseWheelDown) != 0 {
+		for tp := hit; tp != nil; tp = tp.parent {
+			if tp.nd != nil && tp.nd.Kind == node.TextPanelKind && !tp.nd.Disabled {
+				var press input.KeyPress
+				if m.Button&input.MouseWheelUp != 0 {
+					press = input.KeyPress{Key: input.KeyUp}
+				} else {
+					press = input.KeyPress{Key: input.KeyDown}
+				}
+				if handleTextPanelKey(tp, press) {
+					r.MarkDirty()
+					consumed = true
+				}
+				break
+			}
+			if tp == focusRoot {
+				break
+			}
+		}
+	}
+
+	// Bubble OnMouse from the hit instance up to the focus root.
+	press := input.MousePress{
+		X:      m.X,
+		Y:      m.Y,
+		Button: m.Button,
+		Mod:    normalizeMod(m.Mod),
+	}
+	for inst := hit; inst != nil; inst = inst.parent {
+		if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnMouse != nil {
+			if inst.nd.OnMouse(press) {
+				consumed = true
+				break
+			}
+		}
+		if inst == focusRoot {
+			break
+		}
+	}
+
+	return consumed
+}
+
+// hitTest returns the deepest instance whose layout rect contains (x, y),
+// searching children in reverse order so visually topmost children win.
+func hitTest(inst *Instance, x, y int) *Instance {
+	for i := len(inst.children) - 1; i >= 0; i-- {
+		if hit := hitTest(inst.children[i], x, y); hit != nil {
+			return hit
+		}
+	}
+	r := inst.layout.Rect
+	if x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H {
+		return inst
+	}
+	return nil
 }
 
 // deliverKey walks the instance tree depth-first (children before parent),
@@ -343,46 +438,46 @@ func (r *Runtime) focusNext() {
 func (r *Runtime) ensureFocus() {
 	if r.root == nil {
 		r.focused = nil
-		r.activeScope = nil
-		r.focusBeforeScope = nil
+		r.scopeStack = nil
 		return
 	}
 
 	prev := r.focused
-	currentScope := findTopmostFocusScope(r.root)
+	path := findTopmostFocusScopePath(r.root)
 
-	if currentScope != r.activeScope {
-		switch {
-		case currentScope != nil && r.activeScope == nil:
-			// no scope → scope: record what was focused before entering
-			r.focusBeforeScope = r.focused
-		case currentScope == nil && r.activeScope != nil:
-			// scope → no scope: try to restore prior focus
-			if r.focusBeforeScope != nil {
-				allFocusable := collectFocusable(r.root)
-				for _, inst := range allFocusable {
-					if inst == r.focusBeforeScope {
-						r.focused = r.focusBeforeScope
-						r.focusBeforeScope = nil
-						r.activeScope = currentScope
-						if r.focused != prev {
-							r.dirty = true
-						}
-						return
-					}
-				}
-			}
-			r.focusBeforeScope = nil
-		}
-		r.activeScope = currentScope
+	// Find how many frames in the current stack still match the new scope path.
+	common := 0
+	for common < len(path) && common < len(r.scopeStack) && r.scopeStack[common].scope == path[common] {
+		common++
 	}
 
-	focusable := collectFocusable(activeFocusRoot(r.root))
+	// Scopes were removed: pop frames and try to restore focus.
+	if common < len(r.scopeStack) {
+		restoreTo := r.scopeStack[common].restoreTo
+		r.scopeStack = r.scopeStack[:common]
+		if canRestoreFocus(r.root, restoreTo) {
+			r.focused = restoreTo
+		}
+	}
 
+	// New scopes were added: push frames.
+	for i := common; i < len(path); i++ {
+		var restoreTo *Instance
+		if i == common {
+			restoreTo = r.focused // save current focus before entering new scope
+		}
+		r.scopeStack = append(r.scopeStack, focusScopeFrame{scope: path[i], restoreTo: restoreTo})
+	}
+
+	// Ensure focused is valid within the current active scope.
+	focusable := collectFocusable(activeFocusRoot(r.root))
 	if r.focused != nil {
 		for _, inst := range focusable {
 			if inst == r.focused {
-				return // still valid; no change
+				if r.focused != prev {
+					r.dirty = true
+				}
+				return // still valid
 			}
 		}
 		// Previously focused instance is gone or now outside active scope.
@@ -398,6 +493,41 @@ func (r *Runtime) ensureFocus() {
 	if r.focused != prev {
 		r.dirty = true
 	}
+}
+
+// canRestoreFocus reports whether target is a valid, focusable instance
+// within the current active focus root.
+func canRestoreFocus(root *Instance, target *Instance) bool {
+	if target == nil {
+		return false
+	}
+	for _, inst := range collectFocusable(activeFocusRoot(root)) {
+		if inst == target {
+			return true
+		}
+	}
+	return false
+}
+
+// findTopmostFocusScopePath returns the chain of focus scopes from the outermost
+// scope that contains the topmost scope, down to the topmost scope itself.
+// Returns nil if no focus scope is present in the tree.
+func findTopmostFocusScopePath(inst *Instance) []*Instance {
+	if inst == nil {
+		return nil
+	}
+	for i := len(inst.children) - 1; i >= 0; i-- {
+		if path := findTopmostFocusScopePath(inst.children[i]); len(path) > 0 {
+			if inst.nd != nil && inst.nd.FocusScope {
+				return append([]*Instance{inst}, path...)
+			}
+			return path
+		}
+	}
+	if inst.nd != nil && inst.nd.FocusScope {
+		return []*Instance{inst}
+	}
+	return nil
 }
 
 // firstAutoFocus returns the first focusable instance with AutoFocus set.

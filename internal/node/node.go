@@ -33,6 +33,9 @@ type KeyPress = input.KeyPress
 // KeyHandler processes a key press. Returns true if the event was consumed.
 type KeyHandler func(KeyPress) bool
 
+// MouseHandler processes a mouse event. Returns true if the event was consumed.
+type MouseHandler func(input.MousePress) bool
+
 // TextOptions holds options for text nodes.
 type TextOptions struct {
 	Align TextAlign
@@ -57,6 +60,7 @@ type Node struct {
 	CompFn        func() *Node     // component render function (ComponentKind)
 	CompID        uintptr          // identity of component function (for reconciliation)
 	OnKey         KeyHandler       // optional key handler (ViewKind)
+	OnMouse       MouseHandler     // optional mouse handler (ViewKind)
 	Focusable     bool             // whether this node can receive focus
 	AutoFocus     bool             // request focus on initial mount if no other node is focused
 	Disabled      bool             // skip in focus traversal and key delivery

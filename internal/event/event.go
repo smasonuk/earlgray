@@ -15,6 +15,7 @@ const (
 	FocusKind       // terminal gained focus
 	BlurKind        // terminal lost focus
 	QuitKind        // quit signal
+	MouseKind       // mouse button or wheel event
 )
 
 // Key holds key event data.
@@ -92,10 +93,18 @@ func NormalizeKey(tcellKey tcell.Key, rune rune) input.Key {
 	}
 }
 
+// Mouse holds mouse event data.
+type Mouse struct {
+	X, Y   int
+	Button input.MouseButton
+	Mod    tcell.ModMask
+}
+
 // Event is a unified internal event.
 type Event struct {
 	Kind   Kind
-	Key    Key // valid if Kind == KeyKind
-	Width  int // valid if Kind == ResizeKind
+	Key    Key   // valid if Kind == KeyKind
+	Mouse  Mouse // valid if Kind == MouseKind
+	Width  int   // valid if Kind == ResizeKind
 	Height int
 }

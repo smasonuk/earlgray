@@ -3,6 +3,7 @@ package host
 import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/smason/earlgray/internal/event"
+	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/screen"
 )
 
@@ -22,7 +23,11 @@ func NewTcellHost() (*TcellHost, error) {
 
 // Init initializes the underlying tcell screen.
 func (h *TcellHost) Init() error {
-	return h.s.Init()
+	if err := h.s.Init(); err != nil {
+		return err
+	}
+	h.s.EnableMouse()
+	return nil
 }
 
 // Close finalizes the tcell screen.
@@ -62,12 +67,43 @@ func (h *TcellHost) PollEvent() event.Event {
 				return event.Event{Kind: event.FocusKind}
 			}
 			return event.Event{Kind: event.BlurKind}
+		case *tcell.EventMouse:
+			x, y := e.Position()
+			return event.Event{
+				Kind: event.MouseKind,
+				Mouse: event.Mouse{
+					X:      x,
+					Y:      y,
+					Button: normalizeTcellMouseButton(e.Buttons()),
+					Mod:    e.Modifiers(),
+				},
+			}
 		case nil:
 			// Screen was finalized.
 			return event.Event{Kind: event.QuitKind}
 		}
-		// Ignore other event types (mouse, etc.) - loop again.
+		// Ignore other event types - loop again.
 	}
+}
+
+func normalizeTcellMouseButton(b tcell.ButtonMask) input.MouseButton {
+	var out input.MouseButton
+	if b&tcell.Button1 != 0 {
+		out |= input.MouseLeft
+	}
+	if b&tcell.Button2 != 0 {
+		out |= input.MouseMiddle
+	}
+	if b&tcell.Button3 != 0 {
+		out |= input.MouseRight
+	}
+	if b&tcell.WheelUp != 0 {
+		out |= input.MouseWheelUp
+	}
+	if b&tcell.WheelDown != 0 {
+		out |= input.MouseWheelDown
+	}
+	return out
 }
 
 // Show flushes pending drawing operations to the screen.
