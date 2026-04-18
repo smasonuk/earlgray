@@ -44,6 +44,12 @@ type Instance struct {
 
 	// compID is the identity of a component function (for ComponentKind nodes).
 	compID uintptr
+
+	// Scroll state for scrollable nodes such as TextPanelKind.
+	// scrollY is measured in visual lines after wrapping.
+	// scrollX is measured in terminal cells and is only used when word wrap is disabled.
+	scrollX int
+	scrollY int
 }
 
 // cursorState holds the cursor position requested by the most recently rendered
@@ -193,6 +199,15 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			Rune: ev.Key.Rune,
 			Mod:  normalizeMod(ev.Key.Mod),
 		}
+
+		if r.focused.nd != nil &&
+			r.focused.nd.Kind == node.TextPanelKind &&
+			!r.focused.nd.Disabled &&
+			handleTextPanelKey(r.focused, press) {
+			r.MarkDirty()
+			return true
+		}
+
 		root := activeFocusRoot(r.root)
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
@@ -544,6 +559,26 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 		for _, child := range inst.children {
 			renderInstance(child, buf, s, cursor)
 		}
+		return
+	}
+
+	if inst.nd.Kind == node.TextPanelKind {
+		s := style.Merge(inherited, inst.nd.Style)
+
+		fillStyle := screen.CellStyle{
+			Fg: s.Foreground,
+			Bg: s.Background,
+		}
+		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
+
+		borderStyle := screen.CellStyle{
+			Fg:   s.Foreground,
+			Bg:   s.Background,
+			Bold: s.Bold,
+		}
+		drawBorders(buf, r, s.Border, borderStyle)
+
+		renderTextPanel(inst, buf, content, s)
 		return
 	}
 

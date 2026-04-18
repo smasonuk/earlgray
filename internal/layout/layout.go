@@ -3,6 +3,7 @@ package layout
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/node"
@@ -83,6 +84,11 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 			Rect:    style.Rect{X: ox, Y: oy, W: c.MaxW, H: c.MaxH},
 			Content: style.Rect{X: ox, Y: oy, W: c.MaxW, H: c.MaxH},
 		}}
+	}
+
+	if nd.Kind == node.TextPanelKind {
+		result := styledBoxResult(nd.Style, c, ox, oy)
+		return &Tree{Result: result}
 	}
 
 	// Text nodes: size is determined by constraints.
@@ -390,6 +396,35 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 	case node.TextKind:
 		return measureText(nd.Text, maxW, maxH)
 
+	case node.TextPanelKind:
+		s := nd.Style
+		bIns := s.Border.Insets()
+		ins := addInsets(s.Padding, bIns)
+
+		innerMaxW := maxW - ins.Left - ins.Right
+		innerMaxH := maxH - ins.Top - ins.Bottom
+		if innerMaxW < 0 {
+			innerMaxW = 0
+		}
+		if innerMaxH < 0 {
+			innerMaxH = 0
+		}
+
+		cw, ch := measureTextPanelIntrinsic(nd.Text, nd.TextPanelOpts, innerMaxW, innerMaxH)
+
+		w = cw + ins.Left + ins.Right
+		h = ch + ins.Top + ins.Bottom
+
+		if s.Width.Kind == style.DimCells {
+			w = s.Width.Value
+		}
+		if s.Height.Kind == style.DimCells {
+			h = s.Height.Value
+		}
+
+		w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
+		return w, h
+
 	case node.ViewKind:
 		s := nd.Style
 		bIns := s.Border.Insets()
@@ -543,4 +578,102 @@ func measureChildrenIntrinsic(children []*node.Node, maxW, maxH int, dir style.D
 		}
 	}
 	return w, h
+}
+
+func measureTextPanelIntrinsic(text string, opts node.TextPanelOptions, maxW, maxH int) (w, h int) {
+	if maxW <= 0 {
+		return 0, 0
+	}
+
+	lines := strings.Split(text, "\n")
+
+	if opts.WordWrap {
+		visual := wrapTextPanelLines(text, maxW)
+		h = len(visual)
+		for _, line := range visual {
+			lw := runewidth.StringWidth(line)
+			if lw > w {
+				w = lw
+			}
+		}
+	} else {
+		h = len(lines)
+		for _, line := range lines {
+			lw := runewidth.StringWidth(line)
+			if lw > w {
+				w = lw
+			}
+		}
+	}
+
+	if maxW > 0 && w > maxW {
+		w = maxW
+	}
+	if maxH > 0 && h > maxH {
+		h = maxH
+	}
+
+	return w, h
+}
+
+func wrapTextPanelLines(text string, width int) []string {
+	if width <= 0 {
+		return nil
+	}
+	var visual []string
+	logicalLines := strings.Split(text, "\n")
+	for _, line := range logicalLines {
+		if line == "" {
+			visual = append(visual, "")
+			continue
+		}
+
+		words := strings.Split(line, " ")
+		var currentLine string
+		var currentWidth int
+
+		for i, word := range words {
+			wordWidth := runewidth.StringWidth(word)
+
+			// If it's not the first word, try to add a space.
+			if i > 0 {
+				if currentWidth+1+wordWidth <= width {
+					currentLine += " " + word
+					currentWidth += 1 + wordWidth
+					continue
+				} else {
+					// Cannot fit space + word, so finish currentLine and start new.
+					visual = append(visual, currentLine)
+					currentLine = ""
+					currentWidth = 0
+				}
+			}
+
+			// Current word might be longer than width.
+			for runewidth.StringWidth(word) > width {
+				// Hard break the word.
+				idx := 0
+				w := 0
+				for _, r := range word {
+					rw := runewidth.RuneWidth(r)
+					if w+rw > width {
+						break
+					}
+					w += rw
+					idx += len(string(r))
+				}
+				// If width is so small it can't fit a single rune, force one.
+				if idx == 0 && len(word) > 0 {
+					_, size := utf8.DecodeRuneInString(word)
+					idx = size
+				}
+				visual = append(visual, word[:idx])
+				word = word[idx:]
+			}
+			currentLine = word
+			currentWidth = runewidth.StringWidth(word)
+		}
+		visual = append(visual, currentLine)
+	}
+	return visual
 }

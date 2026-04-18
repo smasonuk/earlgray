@@ -944,6 +944,64 @@ func Select(props SelectProps) Node {
 	})
 }
 
+// TextPanelProps configures a scrollable read-only text panel.
+type TextPanelProps struct {
+	Text string
+
+	// Style is the base style for the panel.
+	Style Style
+
+	// FocusedStyle overlays only visual attributes when the panel is focused:
+	// Foreground, Background, Bold, Italic, and Underline.
+	// Layout fields such as Width, Height, Padding, Gap, Border, and FlexGrow
+	// are intentionally ignored.
+	FocusedStyle Style
+
+	// WordWrap wraps long lines to the panel content width.
+	// When false, long lines are horizontally clipped and Left/Right scroll.
+	WordWrap bool
+
+	// ShowScrollbar draws a vertical scrollbar when the visual text content
+	// has more lines than the visible viewport.
+	ShowScrollbar bool
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+// TextPanel creates a focusable scrollable read-only text panel.
+//
+// Keyboard behavior:
+//   - Up/Down scroll one visual line.
+//   - PgUp/PgDown scroll one viewport page.
+//   - Home/End scroll to top/bottom.
+//   - Left/Right scroll horizontally only when WordWrap is false.
+//
+// TextPanel is read-only. It does not call OnChange and does not edit text.
+func TextPanel(props TextPanelProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		s := props.Style
+		if focused {
+			s = overlayVisualStyle(props.Style, props.FocusedStyle)
+		}
+
+		return &inode.Node{
+			Kind:      inode.TextPanelKind,
+			Text:      props.Text,
+			Style:     s,
+			Focusable: !props.Disabled,
+			AutoFocus: props.AutoFocus,
+			Disabled:  props.Disabled,
+			TextPanelOpts: inode.TextPanelOptions{
+				WordWrap:      props.WordWrap,
+				ShowScrollbar: props.ShowScrollbar,
+			},
+		}
+	})
+}
+
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
 // The root function is called on every render to produce the new node tree.
 func Run(root func() Node) error {

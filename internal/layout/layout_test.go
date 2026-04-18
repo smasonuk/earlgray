@@ -553,3 +553,87 @@ func TestComponentRenderedFlexGrowParticipatesInParentColumn(t *testing.T) {
 		t.Fatalf("fixed sibling Y = %d, want 20", second.Y)
 	}
 }
+
+func TestTextPanelLayoutHonorsFixedSizeAndPadding(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Style: style.Style{
+			Width:   style.Cells(10),
+			Height:  style.Cells(5),
+			Padding: style.All(1),
+		},
+		Text: "hello",
+	}
+
+	tree := Layout(n, rootC())
+
+	if tree.Result.Rect != (style.Rect{X: 0, Y: 0, W: 10, H: 5}) {
+		t.Fatalf("rect = %+v, want 10x5", tree.Result.Rect)
+	}
+
+	if tree.Result.Content != (style.Rect{X: 1, Y: 1, W: 8, H: 3}) {
+		t.Fatalf("content = %+v, want padded content", tree.Result.Content)
+	}
+}
+
+func TestTextPanelLayoutHonorsBorder(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Style: style.Style{
+			Width:  style.Cells(10),
+			Height: style.Cells(5),
+			Border: style.BorderAll,
+		},
+		Text: "hello",
+	}
+
+	tree := Layout(n, rootC())
+
+	if tree.Result.Content != (style.Rect{X: 1, Y: 1, W: 8, H: 3}) {
+		t.Fatalf("content = %+v, want bordered content", tree.Result.Content)
+	}
+}
+
+func TestTextPanelFlexGrowParticipatesInParentRow(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Style: style.Style{
+			FlexGrow: 1,
+		},
+		Text: "hello",
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Row},
+		n,
+		viewNode(style.Style{Width: style.Cells(10)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	if tree.Children[0].Result.Rect.W != 70 {
+		t.Fatalf("TextPanel width = %d, want 70", tree.Children[0].Result.Rect.W)
+	}
+}
+
+func TestTextPanelFlexGrowParticipatesInParentColumn(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Style: style.Style{
+			FlexGrow: 1,
+		},
+		Text: "hello",
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Column},
+		n,
+		viewNode(style.Style{Height: style.Cells(4)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	if tree.Children[0].Result.Rect.H != 20 {
+		t.Fatalf("TextPanel height = %d, want 20", tree.Children[0].Result.Rect.H)
+	}
+}

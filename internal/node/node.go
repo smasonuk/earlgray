@@ -15,6 +15,7 @@ const (
 	KeyedKind                 // wraps another node with an explicit key
 	ComponentKind             // a function component
 	OverlayKind               // stacks children on top of each other
+	TextPanelKind             // a scrollable text panel
 )
 
 // TextAlign controls text alignment within its container.
@@ -38,6 +39,12 @@ type TextOptions struct {
 	Style style.Style
 }
 
+// TextPanelOptions holds options for scrollable text panels.
+type TextPanelOptions struct {
+	WordWrap      bool
+	ShowScrollbar bool
+}
+
 // Node is the internal concrete node type.
 type Node struct {
 	Kind      Kind
@@ -46,6 +53,7 @@ type Node struct {
 	Children  []*Node      // child nodes (ViewKind, KeyedKind)
 	Text      string       // text content (TextKind)
 	TextOpts  TextOptions  // text options (TextKind)
+	TextPanelOpts TextPanelOptions // text panel options (TextPanelKind)
 	CompFn    func() *Node // component render function (ComponentKind)
 	CompID    uintptr      // identity of component function (for reconciliation)
 	OnKey     KeyHandler   // optional key handler (ViewKind)

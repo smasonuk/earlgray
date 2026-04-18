@@ -2077,3 +2077,177 @@ func TestSelectControlledUpdateRendersNewValue(t *testing.T) {
 	}
 }
 
+
+func TestTextPanelReturnsComponentNode(t *testing.T) {
+	got := TextPanel(TextPanelProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("TextPanel should return ComponentKind, got %v", got.Kind)
+	}
+}
+
+func TestTextPanelRendersText(t *testing.T) {
+	rt := runtime.New()
+
+	root := TextPanel(TextPanelProps{
+		Text:      "Hello",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(3),
+			Border: BorderAll,
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(1, 1).Rune; got != 'H' {
+		t.Fatalf("TextPanel text starts at (1,1), got %q", got)
+	}
+}
+
+func TestTextPanelDownScrollsContent(t *testing.T) {
+	rt := runtime.New()
+
+	root := TextPanel(TextPanelProps{
+		Text:      "one\ntwo\nthree",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+	if !consumed {
+		t.Fatal("Down should be consumed when content can scroll")
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != 't' {
+		t.Fatalf("after scroll, first visible line should be two, got %q", got)
+	}
+}
+
+func TestTextPanelUpAtTopReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := TextPanel(TextPanelProps{
+		Text:      "one\ntwo",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	})
+
+	if consumed {
+		t.Fatal("Up at top should return false")
+	}
+}
+
+func TestDisabledTextPanelDoesNotScroll(t *testing.T) {
+	rt := runtime.New()
+
+	root := TextPanel(TextPanelProps{
+		Text:      "one\ntwo\nthree",
+		Disabled: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed {
+		t.Fatal("Disabled TextPanel should not consume Down")
+	}
+}
+
+func TestTextPanelWordWrapWrapsLongLine(t *testing.T) {
+	rt := runtime.New()
+
+	root := TextPanel(TextPanelProps{
+		Text:     "alpha beta gamma",
+		WordWrap: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(3),
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Expected visual lines: "alpha beta", "gamma"
+	// "alpha beta" is 10 cells.
+	if got := buf.At(0, 0).Rune; got != 'a' {
+		t.Fatalf("first wrapped line starts with %q, want 'a'", got)
+	}
+	if got := buf.At(0, 1).Rune; got != 'g' {
+		t.Fatalf("second wrapped line starts with %q, want 'g'", got)
+	}
+}
+
+func TestTextPanelNoWrapRightScrollsHorizontally(t *testing.T) {
+	rt := runtime.New()
+
+	root := TextPanel(TextPanelProps{
+		Text:      "abcdef",
+		WordWrap: false,
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(3),
+			Height: Cells(1),
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRight},
+	})
+	if !consumed {
+		t.Fatal("Right should scroll horizontally when WordWrap=false")
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != 'b' {
+		t.Fatalf("after horizontal scroll, first visible rune = %q, want 'b'", got)
+	}
+}
