@@ -35,8 +35,8 @@ type Instance struct {
 	// Layout result from the most recent layout pass.
 	layout layout.Result
 
-	// Hook slots for UseState (indexed by hook call order).
-	hookSlots []any
+	// Hook slots for component hooks (indexed by hook call order).
+	hookSlots []hookSlot
 	hookIdx   int // reset to 0 at the start of each render
 
 	// dirty marks this instance as needing re-render.
@@ -67,6 +67,30 @@ type focusScopeFrame struct {
 	restoreTo *Instance // the focused instance before this scope was entered
 }
 
+type hookKind int
+
+const (
+	hookState hookKind = iota
+	hookEffect
+)
+
+type hookSlot struct {
+	kind   hookKind
+	state  any
+	effect effectSlot
+}
+
+type effectSlot struct {
+	deps    []any
+	cleanup func()
+}
+
+type pendingEffect struct {
+	inst   *Instance
+	idx    int
+	effect func() func()
+}
+
 // Runtime manages the component tree lifecycle.
 type Runtime struct {
 	root  *Instance
@@ -79,6 +103,8 @@ type Runtime struct {
 	// scopeStack tracks nested focus scopes. Each frame records the scope instance
 	// and what was focused before entering that scope.
 	scopeStack []focusScopeFrame
+
+	pendingEffects []pendingEffect
 
 	lastMouseButtons input.MouseButton
 }
@@ -100,6 +126,7 @@ func (r *Runtime) IsDirty() bool {
 
 // Update reconciles the existing instance tree against a new node tree.
 func (r *Runtime) Update(n *node.Node) {
+	r.pendingEffects = nil
 	if r.root == nil {
 		r.root = mount(r, nil, n)
 	} else {
@@ -118,6 +145,56 @@ func (r *Runtime) Focused() *Instance {
 // visible is false if no node requested a cursor.
 func (r *Runtime) Cursor() (x, y int, visible bool) {
 	return r.cursor.x, r.cursor.y, r.cursor.visible
+}
+
+func (r *Runtime) enqueueEffect(inst *Instance, idx int, effect func() func()) {
+	r.pendingEffects = append(r.pendingEffects, pendingEffect{
+		inst:   inst,
+		idx:    idx,
+		effect: effect,
+	})
+}
+
+// RunEffects executes effects queued during the most recent committed render.
+func (r *Runtime) RunEffects() {
+	pending := r.pendingEffects
+	r.pendingEffects = nil
+
+	for _, p := range pending {
+		if !isInstanceMounted(r.root, p.inst) {
+			continue
+		}
+		if p.idx < 0 || p.idx >= len(p.inst.hookSlots) {
+			continue
+		}
+
+		slot := &p.inst.hookSlots[p.idx]
+		if slot.kind != hookEffect {
+			continue
+		}
+
+		if slot.effect.cleanup != nil {
+			slot.effect.cleanup()
+			slot.effect.cleanup = nil
+		}
+
+		cleanup := p.effect()
+		if cleanup != nil && isInstanceMounted(r.root, p.inst) {
+			slot.effect.cleanup = cleanup
+		}
+	}
+}
+
+// Dispose unmounts the current instance tree and runs any outstanding cleanups.
+func (r *Runtime) Dispose() {
+	if r.root != nil {
+		unmount(r.root)
+	}
+	r.root = nil
+	r.focused = nil
+	r.scopeStack = nil
+	r.pendingEffects = nil
+	r.dirty = false
 }
 
 // RunLayout computes layout for the current instance tree.
@@ -668,6 +745,7 @@ func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
 // parent is the parent of inst in the new tree (may be nil for root).
 func reconcile(rt *Runtime, parent *Instance, inst *Instance, n *node.Node) *Instance {
 	if !sameKind(inst, n) {
+		unmount(inst)
 		return mount(rt, parent, n)
 	}
 
@@ -716,6 +794,7 @@ func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 
 	next := make([]*Instance, len(newChildren))
 	usedOld := make([]bool, len(old))
+	reused := make(map[*Instance]bool, len(old))
 
 	for i, nc := range newChildren {
 		var matched *Instance
@@ -735,9 +814,16 @@ func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 		}
 
 		if matched != nil {
+			reused[matched] = true
 			next[i] = reconcile(rt, inst, matched, nc)
 		} else {
 			next[i] = mount(rt, inst, nc)
+		}
+	}
+
+	for _, oldInst := range old {
+		if !reused[oldInst] {
+			unmount(oldInst)
 		}
 	}
 
@@ -765,6 +851,41 @@ func renderComponent(inst *Instance, n *node.Node) *node.Node {
 	renderingInstance = inst
 	defer func() { renderingInstance = prev }()
 	return n.CompFn()
+}
+
+func isInstanceMounted(root, target *Instance) bool {
+	if root == nil || target == nil {
+		return false
+	}
+	if root == target {
+		return true
+	}
+	for _, child := range root.children {
+		if isInstanceMounted(child, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func unmount(inst *Instance) {
+	if inst == nil {
+		return
+	}
+
+	for _, child := range inst.children {
+		unmount(child)
+	}
+
+	for i := range inst.hookSlots {
+		slot := &inst.hookSlots[i]
+		if slot.kind == hookEffect && slot.effect.cleanup != nil {
+			slot.effect.cleanup()
+			slot.effect.cleanup = nil
+		}
+	}
+
+	inst.children = nil
 }
 
 // applyLayout walks the layout tree and stores results in instances.

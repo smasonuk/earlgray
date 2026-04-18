@@ -240,6 +240,29 @@ func TestRunWithOptionsPostTriggersRerender(t *testing.T) {
 	}
 }
 
+func TestRunUseEffectRunsAfterShow(t *testing.T) {
+	fake := newFakeHost(80, 24, nil)
+	showCountSeen := 0
+
+	app := func() Node {
+		return Component(func() Node {
+			UseEffect(func() func() {
+				showCountSeen = fake.showCount
+				return nil
+			})
+			return Text("hello")
+		})
+	}
+
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if showCountSeen == 0 {
+		t.Fatalf("effect should run after Show; observed showCount=%d", showCountSeen)
+	}
+}
+
 func TestRunWithOptionsPostOrderIsPreserved(t *testing.T) {
 	value := ""
 	app := func() Node {

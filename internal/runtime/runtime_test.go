@@ -168,6 +168,325 @@ func TestUseStatePanicsOutsideRender(t *testing.T) {
 	UseState(0)
 }
 
+func TestUseEffectPanicsOutsideRender(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic calling UseEffect outside render")
+		}
+	}()
+	UseEffect(func() func() { return nil })
+}
+
+func TestUseEffectDoesNotRunDuringRender(t *testing.T) {
+	rt := New()
+	events := []string{}
+
+	compFn := func() *node.Node {
+		events = append(events, "render")
+		UseEffect(func() func() {
+			events = append(events, "effect")
+			return nil
+		})
+		return textND("hello")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1001}
+	rt.Update(n)
+
+	if len(events) != 1 || events[0] != "render" {
+		t.Fatalf("effect should not run during render, got %v", events)
+	}
+
+	rt.RunEffects()
+
+	want := []string{"render", "effect"}
+	if len(events) != len(want) {
+		t.Fatalf("events len = %d, want %d (%v)", len(events), len(want), events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events[%d] = %q, want %q (%v)", i, events[i], want[i], events)
+		}
+	}
+}
+
+func TestUseEffectRunsOnceOnMount(t *testing.T) {
+	rt := New()
+	effectRuns := 0
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			effectRuns++
+			return nil
+		})
+		return textND("hello")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1002}
+	rt.Update(n)
+	rt.RunEffects()
+	rt.Update(n)
+	rt.RunEffects()
+
+	if effectRuns != 1 {
+		t.Fatalf("effectRuns = %d, want 1", effectRuns)
+	}
+}
+
+func TestUseEffectSameDependencyDoesNotRerun(t *testing.T) {
+	rt := New()
+	effectRuns := 0
+	cleanupRuns := 0
+	dep := "a"
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			effectRuns++
+			return func() {
+				cleanupRuns++
+			}
+		}, dep)
+		return textND(dep)
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1003}
+	rt.Update(n)
+	rt.RunEffects()
+	rt.Update(n)
+	rt.RunEffects()
+
+	if effectRuns != 1 {
+		t.Fatalf("effectRuns = %d, want 1", effectRuns)
+	}
+	if cleanupRuns != 0 {
+		t.Fatalf("cleanupRuns = %d, want 0", cleanupRuns)
+	}
+}
+
+func TestUseEffectChangedDependencyRerunsWithCleanupFirst(t *testing.T) {
+	rt := New()
+	dep := "a"
+	events := []string{}
+
+	compFn := func() *node.Node {
+		currentDep := dep
+		UseEffect(func() func() {
+			events = append(events, "effect "+currentDep)
+			return func() {
+				events = append(events, "cleanup "+currentDep)
+			}
+		}, currentDep)
+		return textND(currentDep)
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1004}
+	rt.Update(n)
+	rt.RunEffects()
+
+	dep = "b"
+	rt.Update(n)
+	rt.RunEffects()
+
+	want := []string{"effect a", "cleanup a", "effect b"}
+	if len(events) != len(want) {
+		t.Fatalf("events len = %d, want %d (%v)", len(events), len(want), events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events[%d] = %q, want %q (%v)", i, events[i], want[i], events)
+		}
+	}
+}
+
+func TestUseEffectCleanupRunsOnUnmount(t *testing.T) {
+	rt := New()
+	cleanupRuns := 0
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupRuns++
+			}
+		})
+		return textND("mounted")
+	}
+
+	n1 := viewND(&node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1005})
+	rt.Update(n1)
+	rt.RunEffects()
+
+	rt.Update(viewND())
+
+	if cleanupRuns != 1 {
+		t.Fatalf("cleanupRuns = %d, want 1", cleanupRuns)
+	}
+}
+
+func TestUseEffectCleanupRunsWhenComponentIdentityChanges(t *testing.T) {
+	rt := New()
+	events := []string{}
+
+	compA := func() *node.Node {
+		UseEffect(func() func() {
+			events = append(events, "effect A")
+			return func() {
+				events = append(events, "cleanup A")
+			}
+		})
+		return textND("A")
+	}
+	compB := func() *node.Node {
+		UseEffect(func() func() {
+			events = append(events, "effect B")
+			return nil
+		})
+		return textND("B")
+	}
+
+	n1 := viewND(&node.Node{Kind: node.ComponentKind, CompFn: compA, CompID: 1006})
+	rt.Update(n1)
+	rt.RunEffects()
+
+	n2 := viewND(&node.Node{Kind: node.ComponentKind, CompFn: compB, CompID: 1007})
+	rt.Update(n2)
+	rt.RunEffects()
+
+	want := []string{"effect A", "cleanup A", "effect B"}
+	if len(events) != len(want) {
+		t.Fatalf("events len = %d, want %d (%v)", len(events), len(want), events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events[%d] = %q, want %q (%v)", i, events[i], want[i], events)
+		}
+	}
+}
+
+func TestUseEffectCleanupRunsOnKeyedRemoval(t *testing.T) {
+	rt := New()
+	cleanupA := 0
+	cleanupB := 0
+
+	compA := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupA++
+			}
+		})
+		return textND("A")
+	}
+	compB := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupB++
+			}
+		})
+		return textND("B")
+	}
+
+	n1 := viewND(
+		keyedND("a", &node.Node{Kind: node.ComponentKind, CompFn: compA, CompID: 1008}),
+		keyedND("b", &node.Node{Kind: node.ComponentKind, CompFn: compB, CompID: 1009}),
+	)
+	rt.Update(n1)
+	rt.RunEffects()
+
+	n2 := viewND(
+		keyedND("b", &node.Node{Kind: node.ComponentKind, CompFn: compB, CompID: 1009}),
+	)
+	rt.Update(n2)
+	rt.RunEffects()
+
+	if cleanupA != 1 {
+		t.Fatalf("cleanupA = %d, want 1", cleanupA)
+	}
+	if cleanupB != 0 {
+		t.Fatalf("cleanupB = %d, want 0", cleanupB)
+	}
+}
+
+func TestUseEffectMixedHooksPreserveState(t *testing.T) {
+	rt := New()
+	effectRuns := 0
+	var setCount func(int)
+
+	compFn := func() *node.Node {
+		count, setCountLocal := UseState(0)
+		setCount = setCountLocal
+
+		UseEffect(func() func() {
+			effectRuns++
+			return nil
+		}, count)
+
+		label, _ := UseState("x")
+		return textND(label)
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1010}
+	rt.Update(n)
+	rt.RunEffects()
+
+	setCount(1)
+	rt.Update(n)
+	rt.RunEffects()
+
+	if effectRuns != 2 {
+		t.Fatalf("effectRuns = %d, want 2", effectRuns)
+	}
+	if got := rt.root.children[0].nd.Text; got != "x" {
+		t.Fatalf("label state = %q, want %q", got, "x")
+	}
+}
+
+func TestUseEffectHookOrderMismatchPanics(t *testing.T) {
+	rt := New()
+	useEffect := false
+
+	compFn := func() *node.Node {
+		if useEffect {
+			UseEffect(func() func() { return nil })
+		} else {
+			UseState(0)
+		}
+		return textND("hook")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1011}
+	rt.Update(n)
+
+	useEffect = true
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on hook order mismatch")
+		}
+	}()
+	rt.Update(n)
+}
+
+func TestRuntimeDisposeRunsEffectCleanup(t *testing.T) {
+	rt := New()
+	cleanupRuns := 0
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupRuns++
+			}
+		})
+		return textND("dispose")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1012}
+	rt.Update(n)
+	rt.RunEffects()
+	rt.Dispose()
+
+	if cleanupRuns != 1 {
+		t.Fatalf("cleanupRuns = %d, want 1", cleanupRuns)
+	}
+}
+
 func TestConditionalHookCausesTypeMismatchPanic(t *testing.T) {
 	rt := New()
 	condition := true

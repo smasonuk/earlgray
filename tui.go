@@ -245,6 +245,20 @@ func UseState[T any](initial T) (T, func(T)) {
 	return runtime.UseState(initial)
 }
 
+// UseEffect registers a component-local side effect.
+//
+// The effect runs after the rendered tree has been committed. If the dependency
+// values are unchanged since the previous render, the effect is not rerun.
+//
+// If the effect returns a cleanup function, the cleanup runs:
+//   - before the effect reruns due to dependency changes
+//   - when the component unmounts
+//
+// With zero dependencies, the effect runs once on mount.
+func UseEffect(effect func() func(), deps ...any) {
+	runtime.UseEffect(effect, deps...)
+}
+
 // UseFocused reports whether the current component's rendered subtree contains
 // the currently focused node. It must only be called from within a component
 // function.
@@ -1301,6 +1315,7 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 	}
 
 	rt := runtime.New()
+	defer rt.Dispose()
 	w, h2 := h.Size()
 
 	doRender := func(prev *screen.Buffer) *screen.Buffer {
@@ -1316,6 +1331,7 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 			h.HideCursor()
 		}
 		h.Show()
+		rt.RunEffects()
 		return next
 	}
 
