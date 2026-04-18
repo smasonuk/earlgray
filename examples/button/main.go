@@ -29,8 +29,8 @@ func ButtonCounter() tui.Node {
 				Padding:   tui.All(1),
 				Border:    tui.BorderAll,
 			},
-			tui.Text("Count:", tui.WithTextStyle(tui.Style{FlexShrink: 1})),
-			tui.Text(strconv.Itoa(count), tui.WithTextStyle(tui.Style{FlexShrink: 1, Bold: true})),
+			tui.Text("Count:"),
+			tui.Text(strconv.Itoa(count), tui.WithTextStyle(tui.Style{Bold: true})),
 		),
 		// Spacer
 		tui.View(tui.Style{Height: tui.Cells(1)}),
@@ -72,7 +72,7 @@ func ButtonCounter() tui.Node {
 		// Help text
 		tui.View(
 			tui.Style{Height: tui.Cells(1)},
-			tui.Text("Tab to switch, Enter/Space to press, Ctrl-C to quit", tui.WithTextStyle(tui.Style{FlexShrink: 1})),
+			tui.Text("Tab to switch, Enter/Space to press, Ctrl-C to quit"),
 		),
 	)
 }

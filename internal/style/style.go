@@ -166,7 +166,8 @@ type Style struct {
 	MinWidth, MinHeight int
 	MaxWidth, MaxHeight int
 	FlexGrow            int
-	FlexShrink          int
+	// FlexShrink is reserved for future use and is not currently implemented.
+	FlexShrink int
 	Direction           Direction
 	AlignItems          Align
 	Justify             Justify

@@ -46,13 +46,21 @@ type Instance struct {
 	compID uintptr
 }
 
+// cursorState holds the cursor position requested by the most recently rendered
+// node with CursorVisible == true.
+type cursorState struct {
+	visible bool
+	x, y    int
+}
+
 // Runtime manages the component tree lifecycle.
 type Runtime struct {
 	root  *Instance
 	dirty bool
 
-	nextID  uintptr   // incremented on each mount to assign stable IDs
-	focused *Instance // currently focused instance (Focusable node), or nil
+	nextID  uintptr     // incremented on each mount to assign stable IDs
+	focused *Instance   // currently focused instance (Focusable node), or nil
+	cursor  cursorState // cursor position requested during the last Render
 }
 
 // New creates a new Runtime.
@@ -84,6 +92,12 @@ func (r *Runtime) Update(n *node.Node) {
 // Focused returns the currently focused instance, or nil.
 func (r *Runtime) Focused() *Instance {
 	return r.focused
+}
+
+// Cursor returns the cursor position requested during the last Render call.
+// visible is false if no node requested a cursor.
+func (r *Runtime) Cursor() (x, y int, visible bool) {
+	return r.cursor.x, r.cursor.y, r.cursor.visible
 }
 
 // RunLayout computes layout for the current instance tree.
@@ -134,7 +148,8 @@ func (r *Runtime) Render(buf *screen.Buffer) {
 	if r.root == nil {
 		return
 	}
-	renderInstance(r.root, buf, style.Style{})
+	r.cursor = cursorState{}
+	renderInstance(r.root, buf, style.Style{}, &r.cursor)
 }
 
 // normalizeMod converts a tcell modifier mask to an input.Mod.
@@ -159,7 +174,12 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 		return false
 	}
 
-	// Tab moves focus forward through focusable nodes.
+	// Shift+Tab moves focus backward; plain Tab moves forward.
+	if ev.Key.IsShiftTab() {
+		r.focusPrev()
+		r.MarkDirty()
+		return true
+	}
 	if ev.Key.IsTab() {
 		r.focusNext()
 		r.MarkDirty()
@@ -215,12 +235,36 @@ func collectFocusable(root *Instance) []*Instance {
 }
 
 func collectFocusableRec(inst *Instance, result *[]*Instance) {
-	if inst.nd != nil && inst.nd.Focusable {
+	if inst.nd != nil && inst.nd.Focusable && !inst.nd.Disabled {
 		*result = append(*result, inst)
 	}
 	for _, child := range inst.children {
 		collectFocusableRec(child, result)
 	}
+}
+
+// focusPrev moves focus to the previous focusable node, wrapping around.
+func (r *Runtime) focusPrev() {
+	if r.root == nil {
+		return
+	}
+	focusable := collectFocusable(r.root)
+	if len(focusable) == 0 {
+		r.focused = nil
+		return
+	}
+	if r.focused == nil {
+		r.focused = focusable[len(focusable)-1]
+		return
+	}
+	for i, inst := range focusable {
+		if inst == r.focused {
+			r.focused = focusable[(i-1+len(focusable))%len(focusable)]
+			return
+		}
+	}
+	// Focused instance no longer in tree; reset to last.
+	r.focused = focusable[len(focusable)-1]
 }
 
 // focusNext advances focus to the next focusable node, wrapping around.
@@ -268,7 +312,9 @@ func (r *Runtime) ensureFocus() {
 		// Previously focused instance is gone.
 	}
 
-	if len(focusable) > 0 {
+	if af := firstAutoFocus(focusable); af != nil {
+		r.focused = af
+	} else if len(focusable) > 0 {
 		r.focused = focusable[0]
 	} else {
 		r.focused = nil
@@ -276,6 +322,16 @@ func (r *Runtime) ensureFocus() {
 	if r.focused != prev {
 		r.dirty = true
 	}
+}
+
+// firstAutoFocus returns the first focusable instance with AutoFocus set.
+func firstAutoFocus(focusable []*Instance) *Instance {
+	for _, inst := range focusable {
+		if inst.nd != nil && inst.nd.AutoFocus {
+			return inst
+		}
+	}
+	return nil
 }
 
 // mount creates a fresh Instance tree for the given node.
@@ -432,7 +488,7 @@ func applyLayout(inst *Instance, t *layout.Tree) {
 }
 
 // renderInstance paints an instance into the buffer, inheriting color styles from parent.
-func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style) {
+func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, cursor *cursorState) {
 	r := inst.layout.Rect
 	content := inst.layout.Content
 
@@ -452,8 +508,28 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style) {
 		}
 		drawBorders(buf, r, s.Border, borderStyle)
 
+		if inst.nd.CursorVisible && cursor != nil && content.W > 0 && content.H > 0 {
+			cx := inst.nd.CursorX
+			if cx < 0 {
+				cx = 0
+			}
+			if cx >= content.W {
+				cx = content.W - 1
+			}
+			cy := inst.nd.CursorY
+			if cy < 0 {
+				cy = 0
+			}
+			if cy >= content.H {
+				cy = content.H - 1
+			}
+			cursor.visible = true
+			cursor.x = content.X + cx
+			cursor.y = content.Y + cy
+		}
+
 		for _, child := range inst.children {
-			renderInstance(child, buf, s)
+			renderInstance(child, buf, s, cursor)
 		}
 		return
 	}
@@ -474,7 +550,7 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style) {
 
 	// Component or Keyed: render children.
 	for _, child := range inst.children {
-		renderInstance(child, buf, inherited)
+		renderInstance(child, buf, inherited, cursor)
 	}
 }
 

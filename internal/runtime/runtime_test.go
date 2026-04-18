@@ -458,6 +458,134 @@ func TestUseFocusedFalseForSiblingComponent(t *testing.T) {
 	}
 }
 
+func autoFocusND(children ...*node.Node) *node.Node {
+	return &node.Node{Kind: node.ViewKind, Focusable: true, AutoFocus: true, Children: children}
+}
+
+func disabledFocusableND(children ...*node.Node) *node.Node {
+	return &node.Node{Kind: node.ViewKind, Focusable: true, Disabled: true, Children: children}
+}
+
+func TestFocusPrevCyclesBackward(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND(), focusableND()))
+	rt.focused = rt.root.children[0]
+
+	rt.focusPrev()
+	// From first, wraps to last.
+	want := rt.root.children[2]
+	if rt.focused != want {
+		t.Error("focusPrev from first should wrap to last")
+	}
+}
+
+func TestFocusPrevMovesBackward(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND(), focusableND()))
+	rt.focused = rt.root.children[2]
+
+	rt.focusPrev()
+	want := rt.root.children[1]
+	if rt.focused != want {
+		t.Error("focusPrev from last should move to second")
+	}
+}
+
+func TestShiftTabCallsFocusPrev(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	rt.focused = rt.root.children[1] // start on second
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyBacktab},
+	})
+	if rt.focused != rt.root.children[0] {
+		t.Error("Shift+Tab should move focus to first node")
+	}
+}
+
+func TestPlainTabStillMovesForward(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	rt.focused = rt.root.children[0]
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab},
+	})
+	if rt.focused != rt.root.children[1] {
+		t.Error("Tab should move focus forward")
+	}
+}
+
+func TestAutoFocusWinsOnInitialMount(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), autoFocusND()))
+	if rt.focused == nil {
+		t.Fatal("expected focus to be set")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Error("AutoFocus node should be focused on initial mount")
+	}
+}
+
+func TestAutoFocusDoesNotStealExistingFocus(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	first := rt.root.children[0]
+	rt.focused = first
+
+	// Update: second child now has AutoFocus. Existing focus should stay.
+	rt.Update(viewND(focusableND(), autoFocusND()))
+	if rt.focused != first {
+		t.Error("AutoFocus should not steal focus from an already-focused node")
+	}
+}
+
+func TestDisabledNodesAreSkippedInFocusTraversal(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(disabledFocusableND(), focusableND()))
+	if rt.focused == nil {
+		t.Fatal("expected focus to be set")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Error("disabled node should be skipped; second child should be focused")
+	}
+}
+
+func TestFocusedDisabledNodeLosesFocusOnUpdate(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	rt.focused = rt.root.children[0]
+
+	// Update: first child becomes disabled.
+	rt.Update(viewND(disabledFocusableND(), focusableND()))
+	if rt.focused == rt.root.children[0] {
+		t.Error("focus should leave disabled node after update")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Error("focus should move to second (non-disabled) node")
+	}
+}
+
+func TestDisabledParentDoesNotDisableChild(t *testing.T) {
+	rt := New()
+	// Disabled outer view wrapping a focusable child.
+	outer := &node.Node{
+		Kind:     node.ViewKind,
+		Disabled: true, // disabled but not focusable
+		Children: []*node.Node{focusableND()},
+	}
+	rt.Update(outer)
+	if rt.focused == nil {
+		t.Fatal("child of disabled non-focusable parent should still be focusable")
+	}
+	if rt.focused != rt.root.children[0] {
+		t.Error("expected child instance to be focused")
+	}
+}
+
 func TestNormalizeModNone(t *testing.T) {
 	got := normalizeMod(0)
 	if got != 0 {

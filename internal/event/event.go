@@ -24,9 +24,15 @@ type Key struct {
 	Mod  tcell.ModMask // modifier keys
 }
 
-// IsTab reports whether this key event is a Tab key press.
+// IsTab reports whether this key event is a Tab key press (forward traversal).
 func (k Key) IsTab() bool {
-	return k.Key == tcell.KeyTab
+	return k.Key == tcell.KeyTab && k.Mod&tcell.ModShift == 0
+}
+
+// IsShiftTab reports whether this key event is a Shift+Tab (reverse traversal).
+// Terminals may report this as KeyBacktab or as KeyTab with ModShift.
+func (k Key) IsShiftTab() bool {
+	return k.Key == tcell.KeyBacktab || (k.Key == tcell.KeyTab && k.Mod&tcell.ModShift != 0)
 }
 
 // IsCtrlC reports whether this key event is Ctrl-C.

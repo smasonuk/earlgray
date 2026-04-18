@@ -267,6 +267,102 @@ func TestRenderStyleInheritanceOverride(t *testing.T) {
 	}
 }
 
+func TestRenderCursorHiddenByDefault(t *testing.T) {
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Width:  style.Cells(10),
+			Height: style.Cells(5),
+		},
+		Children: []*node.Node{{Kind: node.TextKind, Text: "hello"}},
+	}
+	rt := New()
+	rt.Update(nd)
+	rt.RunLayout(10, 5)
+	buf := screen.NewBuffer(10, 5)
+	rt.Render(buf)
+	_, _, visible := rt.Cursor()
+	if visible {
+		t.Error("cursor should be hidden when no node requests it")
+	}
+}
+
+func TestRenderCursorPositionedForNode(t *testing.T) {
+	// View with no border: content rect == full rect at (0,0) with size (10,5).
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Width:  style.Cells(10),
+			Height: style.Cells(5),
+		},
+		CursorVisible: true,
+		CursorX:       2,
+		CursorY:       0,
+	}
+	rt := New()
+	rt.Update(nd)
+	rt.RunLayout(10, 5)
+	buf := screen.NewBuffer(10, 5)
+	rt.Render(buf)
+	x, y, visible := rt.Cursor()
+	if !visible {
+		t.Fatal("cursor should be visible")
+	}
+	if x != 2 || y != 0 {
+		t.Errorf("cursor at (%d,%d), want (2,0)", x, y)
+	}
+}
+
+func TestRenderCursorClampsToContentRect(t *testing.T) {
+	// View 5 wide, no border. CursorX=99 should clamp to 4 (content width - 1).
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Width:  style.Cells(5),
+			Height: style.Cells(1),
+		},
+		CursorVisible: true,
+		CursorX:       99,
+		CursorY:       0,
+	}
+	rt := New()
+	rt.Update(nd)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	x, _, visible := rt.Cursor()
+	if !visible {
+		t.Fatal("cursor should be visible")
+	}
+	if x != 4 {
+		t.Errorf("cursor x = %d, want 4 (clamped to content width-1)", x)
+	}
+}
+
+func TestRenderCursorHiddenForZeroContentSize(t *testing.T) {
+	// BorderAll on a 2x2 view: borders consume all space, content is 0x0.
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Width:  style.Cells(2),
+			Height: style.Cells(2),
+			Border: style.BorderAll,
+		},
+		CursorVisible: true,
+		CursorX:       0,
+		CursorY:       0,
+	}
+	rt := New()
+	rt.Update(nd)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	_, _, visible := rt.Cursor()
+	if visible {
+		t.Error("cursor should be hidden when content rect is zero-size")
+	}
+}
+
 func TestRenderWideCharacterClipping(t *testing.T) {
 	// Create a text node with a wide character that might be clipped.
 	// "界" is width 2, "a" is width 1

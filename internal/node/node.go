@@ -49,4 +49,12 @@ type Node struct {
 	CompID    uintptr      // identity of component function (for reconciliation)
 	OnKey     KeyHandler   // optional key handler (ViewKind)
 	Focusable bool         // whether this node can receive focus
+	AutoFocus bool         // request focus on initial mount if no other node is focused
+	Disabled  bool         // skip in focus traversal and key delivery
+
+	// Cursor request: if CursorVisible is true, the runtime will show the
+	// terminal cursor at (CursorX, CursorY) relative to the node's content rect.
+	CursorVisible bool
+	CursorX       int
+	CursorY       int
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"reflect"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/event"
 	"github.com/smason/earlgray/internal/host"
 	"github.com/smason/earlgray/internal/input"
@@ -89,6 +90,8 @@ type ViewProps struct {
 	Style     Style
 	OnKey     func(KeyEvent) bool
 	Focusable bool
+	AutoFocus bool
+	Disabled  bool
 }
 
 // ViewWith creates a container node with props and children.
@@ -99,6 +102,8 @@ func ViewWith(props ViewProps, children ...Node) Node {
 		Children:  children,
 		OnKey:     props.OnKey,
 		Focusable: props.Focusable,
+		AutoFocus: props.AutoFocus,
+		Disabled:  props.Disabled,
 	}
 }
 
@@ -219,6 +224,72 @@ func Button(props ButtonProps) Node {
 	})
 }
 
+// TextInputProps configures a TextInput widget.
+type TextInputProps struct {
+	Value        string
+	OnChange     func(string)
+	Placeholder  string
+	Style        Style
+	FocusedStyle Style
+}
+
+// TextInput creates a focusable single-line text input.
+// It is a controlled component: pass the current value through Value and receive
+// edits through OnChange. The parent is responsible for updating state.
+func TextInput(props TextInputProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		s := props.Style
+		if focused {
+			s = overlayVisualStyle(props.Style, props.FocusedStyle)
+		}
+
+		displayValue := props.Value
+		if displayValue == "" {
+			displayValue = props.Placeholder
+		}
+
+		nd := ViewWith(
+			ViewProps{
+				Style:     s,
+				Focusable: true,
+				OnKey: func(ev KeyEvent) bool {
+					switch ev.Key {
+					case KeyRune:
+						if ev.Rune == 0 {
+							return false
+						}
+						if props.OnChange != nil {
+							props.OnChange(props.Value + string(ev.Rune))
+						}
+						return true
+					case KeyBackspace:
+						runes := []rune(props.Value)
+						if len(runes) == 0 {
+							return false
+						}
+						if props.OnChange != nil {
+							props.OnChange(string(runes[:len(runes)-1]))
+						}
+						return true
+					}
+					return false
+				},
+			},
+			Text(displayValue, WithTextStyle(Style{FlexGrow: 1})),
+		)
+
+		if focused {
+			nd.CursorVisible = true
+			nd.CursorX = runewidth.StringWidth(props.Value)
+			nd.CursorY = 0
+		}
+
+		return nd
+	})
+}
+
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
 // The root function is called on every render to produce the new node tree.
 func Run(root func() Node) error {
@@ -241,6 +312,11 @@ func Run(root func() Node) error {
 		next := screen.NewBuffer(w, h2)
 		rt.Render(next)
 		render.FlushDiff(prev, next, h)
+		if cx, cy, ok := rt.Cursor(); ok {
+			h.ShowCursor(cx, cy)
+		} else {
+			h.HideCursor()
+		}
 		h.Show()
 		return next
 	}
@@ -251,7 +327,6 @@ func Run(root func() Node) error {
 	if rt.IsDirty() {
 		prev = doRender(prev)
 	}
-	h.HideCursor()
 
 	for {
 		ev := h.PollEvent()

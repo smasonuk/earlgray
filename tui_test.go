@@ -1,6 +1,10 @@
 package tui
 
-import "testing"
+import (
+	"testing"
+
+	inode "github.com/smason/earlgray/internal/node"
+)
 
 func TestOverlayVisualStyleIgnoresFocusLayout(t *testing.T) {
 	base := Style{
@@ -22,6 +26,13 @@ func TestOverlayVisualStyleIgnoresFocusLayout(t *testing.T) {
 	}
 	if got.Foreground != focus.Foreground {
 		t.Fatal("focused visual style should apply foreground")
+	}
+}
+
+func TestTextInputReturnsComponentNode(t *testing.T) {
+	got := TextInput(TextInputProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("TextInput should return a ComponentKind node, got %v", got.Kind)
 	}
 }
 
