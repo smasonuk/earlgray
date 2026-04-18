@@ -4,6 +4,7 @@ package layout
 import (
 	"strings"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/style"
 )
@@ -394,7 +395,7 @@ func measureText(text string, maxW, maxH int) (w, h int) {
 	lines := strings.Split(text, "\n")
 	maxLine := 0
 	for _, l := range lines {
-		n := len([]rune(l))
+		n := runewidth.StringWidth(l)
 		if n > maxLine {
 			maxLine = n
 		}

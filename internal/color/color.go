@@ -7,7 +7,8 @@ import "github.com/gdamore/tcell/v2"
 type Kind int
 
 const (
-	Default Kind = iota
+	Unspecified Kind = iota // no color specified; inherit from parent
+	Default                 // explicitly use terminal default color
 	ANSI
 	RGB
 )
@@ -34,10 +35,16 @@ func RGBColor(r, g, b uint8) Color {
 	return Color{Kind: RGB, R: r, G: g, B: b}
 }
 
+// IsSpecified reports whether a color is explicitly specified.
+// Unspecified colors should inherit from parent; specified colors should override.
+func (c Color) IsSpecified() bool {
+	return c.Kind != Unspecified
+}
+
 // ToTcell converts the color to a tcell.Color.
 func (c Color) ToTcell() tcell.Color {
 	switch c.Kind {
-	case Default:
+	case Default, Unspecified:
 		return tcell.ColorDefault
 	case ANSI:
 		return tcell.PaletteColor(c.ANSIVal)

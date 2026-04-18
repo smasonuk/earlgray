@@ -179,3 +179,19 @@ type Style struct {
 	Italic              bool
 	Underline           bool
 }
+
+// Merge returns a new style that inherits unspecified colors from parent.
+// Child values that are specified override parent values. Boolean attributes
+// are not inherited (Go bools cannot distinguish false from unset).
+func Merge(parent, child Style) Style {
+	out := child
+
+	if !out.Foreground.IsSpecified() {
+		out.Foreground = parent.Foreground
+	}
+	if !out.Background.IsSpecified() {
+		out.Background = parent.Background
+	}
+
+	return out
+}

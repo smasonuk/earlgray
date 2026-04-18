@@ -4,8 +4,10 @@ package runtime
 import (
 	"strings"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/event"
+	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/layout"
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/screen"
@@ -132,7 +134,22 @@ func (r *Runtime) Render(buf *screen.Buffer) {
 	if r.root == nil {
 		return
 	}
-	renderInstance(r.root, buf)
+	renderInstance(r.root, buf, style.Style{})
+}
+
+// normalizeMod converts a tcell modifier mask to an input.Mod.
+func normalizeMod(m tcell.ModMask) input.Mod {
+	var out input.Mod
+	if m&tcell.ModCtrl != 0 {
+		out |= input.ModCtrl
+	}
+	if m&tcell.ModAlt != 0 {
+		out |= input.ModAlt
+	}
+	if m&tcell.ModShift != 0 {
+		out |= input.ModShift
+	}
+	return out
 }
 
 // HandleEvent delivers a keyboard event to the runtime.
@@ -151,7 +168,11 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 
 	// Deliver to focused node, then bubble up the parent chain.
 	if r.focused != nil {
-		press := node.KeyPress{Rune: ev.Key.Rune, Mod: int(ev.Key.Mod)}
+		press := input.KeyPress{
+			Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune),
+			Rune: ev.Key.Rune,
+			Mod:  normalizeMod(ev.Key.Mod),
+		}
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
@@ -176,7 +197,12 @@ func deliverKey(inst *Instance, key event.Key) bool {
 		}
 	}
 	if inst.nd.OnKey != nil {
-		return inst.nd.OnKey(node.KeyPress{Rune: key.Rune, Mod: int(key.Mod)})
+		press := input.KeyPress{
+			Key:  event.NormalizeKey(key.Key, key.Rune),
+			Rune: key.Rune,
+			Mod:  normalizeMod(key.Mod),
+		}
+		return inst.nd.OnKey(press)
 	}
 	return false
 }
@@ -405,13 +431,13 @@ func applyLayout(inst *Instance, t *layout.Tree) {
 	}
 }
 
-// renderInstance paints an instance into the buffer.
-func renderInstance(inst *Instance, buf *screen.Buffer) {
+// renderInstance paints an instance into the buffer, inheriting color styles from parent.
+func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style) {
 	r := inst.layout.Rect
 	content := inst.layout.Content
 
 	if inst.nd.Kind == node.ViewKind {
-		s := inst.nd.Style
+		s := style.Merge(inherited, inst.nd.Style)
 
 		fillStyle := screen.CellStyle{
 			Fg: s.Foreground,
@@ -427,14 +453,14 @@ func renderInstance(inst *Instance, buf *screen.Buffer) {
 		drawBorders(buf, r, s.Border, borderStyle)
 
 		for _, child := range inst.children {
-			renderInstance(child, buf)
+			renderInstance(child, buf, s)
 		}
 		return
 	}
 
 	if inst.nd.Kind == node.TextKind {
 		opts := inst.nd.TextOpts
-		s := opts.Style
+		s := style.Merge(inherited, opts.Style)
 		textStyle := screen.CellStyle{
 			Fg:        s.Foreground,
 			Bg:        s.Background,
@@ -448,7 +474,7 @@ func renderInstance(inst *Instance, buf *screen.Buffer) {
 
 	// Component or Keyed: render children.
 	for _, child := range inst.children {
-		renderInstance(child, buf)
+		renderInstance(child, buf, inherited)
 	}
 }
 

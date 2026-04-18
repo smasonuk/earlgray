@@ -44,7 +44,7 @@ func Counter() tui.Node {
 		),
 		tui.View(
 			tui.Style{Height: tui.Cells(1), Padding: tui.Insets{Left: 1}},
-			tui.Text("Press '+'/'-' to change, 'q' to quit"),
+			tui.Text("Press '+'/'-' to change, Ctrl-C to quit"),
 		),
 	)
 }

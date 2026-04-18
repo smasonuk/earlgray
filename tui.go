@@ -4,19 +4,51 @@ import (
 	"reflect"
 
 	"github.com/smason/earlgray/internal/event"
+	"github.com/smason/earlgray/internal/host"
+	"github.com/smason/earlgray/internal/input"
 	inode "github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/render"
 	"github.com/smason/earlgray/internal/runtime"
 	"github.com/smason/earlgray/internal/screen"
-
-	"github.com/smason/earlgray/internal/host"
 )
 
 // Node is the opaque tree element returned by View, Text, Keyed, etc.
 type Node = *inode.Node
 
+// Key identifies a special key or KeyRune for printable characters.
+type Key = input.Key
+
+const (
+	KeyUnknown   = input.KeyUnknown
+	KeyRune      = input.KeyRune
+	KeyEnter     = input.KeyEnter
+	KeyEsc       = input.KeyEsc
+	KeyBackspace = input.KeyBackspace
+	KeyTab       = input.KeyTab
+	KeyUp        = input.KeyUp
+	KeyDown      = input.KeyDown
+	KeyLeft      = input.KeyLeft
+	KeyRight     = input.KeyRight
+	KeyHome      = input.KeyHome
+	KeyEnd       = input.KeyEnd
+	KeyPgUp      = input.KeyPgUp
+	KeyPgDown    = input.KeyPgDown
+	KeyDelete    = input.KeyDelete
+	KeyInsert    = input.KeyInsert
+)
+
+// Mod is a modifier key bitmask.
+type Mod = input.Mod
+
+const (
+	ModNone  = input.ModNone
+	ModCtrl  = input.ModCtrl
+	ModAlt   = input.ModAlt
+	ModShift = input.ModShift
+)
+
 // KeyEvent holds data for a key handler.
-type KeyEvent = inode.KeyPress
+type KeyEvent = input.KeyPress
 
 // TextOption configures a Text node.
 type TextOption func(*inode.TextOptions)
@@ -35,7 +67,8 @@ func WithAlign(a Align) TextOption {
 	}
 }
 
-// WithTextStyle sets the visual style of a text node.
+// WithTextStyle sets the style of a text node. Layout fields such as Width,
+// Height, FlexGrow, and visual fields such as Foreground are supported.
 func WithTextStyle(s Style) TextOption {
 	return func(opts *inode.TextOptions) {
 		opts.Style = s
@@ -79,6 +112,7 @@ func Text(value string, opts ...TextOption) Node {
 		Kind:     inode.TextKind,
 		Text:     value,
 		TextOpts: textOpts,
+		Style:    textOpts.Style,
 	}
 }
 
@@ -112,11 +146,74 @@ func UseState[T any](initial T) (T, func(T)) {
 	return runtime.UseState(initial)
 }
 
-// UseFocused reports whether this component's direct focusable child is the
-// currently focused node. It must only be called from within a component
-// function whose rendered root node has Focusable: true.
+// UseFocused reports whether the current component's rendered subtree contains
+// the currently focused node. It must only be called from within a component
+// function.
 func UseFocused() bool {
 	return runtime.IsFocused()
+}
+
+// ButtonProps configures a Button widget.
+type ButtonProps struct {
+	Label        string
+	OnPress      func()
+	Style        Style
+	FocusedStyle Style
+}
+
+func overlayFocusStyle(base, focus Style) Style {
+	out := base
+	if focus.Foreground.IsSpecified() {
+		out.Foreground = focus.Foreground
+	}
+	if focus.Background.IsSpecified() {
+		out.Background = focus.Background
+	}
+	if focus.Bold {
+		out.Bold = true
+	}
+	if focus.Italic {
+		out.Italic = true
+	}
+	if focus.Underline {
+		out.Underline = true
+	}
+	return out
+}
+
+// Button creates a focusable button that responds to Enter and Space.
+func Button(props ButtonProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		style := props.Style
+		if focused {
+			style = overlayFocusStyle(props.Style, props.FocusedStyle)
+		}
+
+		return ViewWith(
+			ViewProps{
+				Style:     style,
+				Focusable: true,
+				OnKey: func(ev KeyEvent) bool {
+					if ev.Key == KeyEnter {
+						if props.OnPress != nil {
+							props.OnPress()
+						}
+						return true
+					}
+					if ev.Key == KeyRune && ev.Rune == ' ' {
+						if props.OnPress != nil {
+							props.OnPress()
+						}
+						return true
+					}
+					return false
+				},
+			},
+			Text(props.Label, WithAlign(AlignCenter), WithTextStyle(Style{FlexGrow: 1})),
+		)
+	})
 }
 
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
@@ -162,9 +259,8 @@ func Run(root func() Node) error {
 			w, h2 = ev.Width, ev.Height
 			rt.MarkDirty()
 		case event.KeyKind:
-			// Default quit on 'q' or Ctrl-C.
-			if (ev.Key.Rune == 'q' && ev.Key.Mod == 0) ||
-				ev.Key.Key == 3 { // Ctrl-C
+			// Quit on Ctrl-C.
+			if ev.Key.IsCtrlC() {
 				return nil
 			}
 			rt.HandleEvent(ev)

@@ -310,3 +310,37 @@ func TestNestedLayout(t *testing.T) {
 		t.Errorf("main: %+v", main)
 	}
 }
+
+func TestMeasureTextWithWideCharacters(t *testing.T) {
+	// "界" is a wide character with display width 2
+	w, h := measureText("a界b", 0, 0)
+	// "a" is width 1, "界" is width 2, "b" is width 1 = 4 total
+	if w != 4 {
+		t.Errorf("expected width 4, got %d", w)
+	}
+	if h != 1 {
+		t.Errorf("expected height 1, got %d", h)
+	}
+}
+
+func TestMeasureMultilineWithWideCharacters(t *testing.T) {
+	w, h := measureText("a界\n界b", 0, 0)
+	// Line 1: "a界" = 1+2 = 3
+	// Line 2: "界b" = 2+1 = 3
+	// Max width should be 3
+	if w != 3 {
+		t.Errorf("expected width 3, got %d", w)
+	}
+	if h != 2 {
+		t.Errorf("expected height 2, got %d", h)
+	}
+}
+
+func TestMeasureTextRespectMaxWidth(t *testing.T) {
+	// "aaa界" = 1+1+1+2 = 5 display width
+	// With maxW=3, should be clamped to 3
+	w, _ := measureText("aaa界", 3, 0)
+	if w != 3 {
+		t.Errorf("expected width 3, got %d", w)
+	}
+}

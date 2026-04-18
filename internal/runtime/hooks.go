@@ -4,9 +4,22 @@ package runtime
 // This is safe because rendering is single-threaded.
 var renderingInstance *Instance
 
-// IsFocused reports whether any immediate child of the rendering component
-// instance is the currently focused node. Call this from a component function
-// to know whether to render in a focused visual state.
+// containsInstance reports whether the target instance is in the subtree rooted at root.
+func containsInstance(root, target *Instance) bool {
+	if root == target {
+		return true
+	}
+	for _, child := range root.children {
+		if containsInstance(child, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsFocused reports whether the current component's rendered subtree contains
+// the currently focused node. Call this from a component function to know
+// whether to render in a focused visual state.
 func IsFocused() bool {
 	inst := renderingInstance
 	if inst == nil {
@@ -16,12 +29,7 @@ func IsFocused() bool {
 	if rt == nil || rt.focused == nil {
 		return false
 	}
-	for _, child := range inst.children {
-		if child == rt.focused {
-			return true
-		}
-	}
-	return false
+	return containsInstance(inst, rt.focused)
 }
 
 // UseState implements React-like state hooks.

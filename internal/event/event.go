@@ -1,7 +1,10 @@
 // Package event defines internal event types for the TUI runtime.
 package event
 
-import "github.com/gdamore/tcell/v2"
+import (
+	"github.com/gdamore/tcell/v2"
+	"github.com/smason/earlgray/internal/input"
+)
 
 // Kind identifies the type of event.
 type Kind int
@@ -24,6 +27,63 @@ type Key struct {
 // IsTab reports whether this key event is a Tab key press.
 func (k Key) IsTab() bool {
 	return k.Key == tcell.KeyTab
+}
+
+// IsCtrlC reports whether this key event is Ctrl-C.
+func (k Key) IsCtrlC() bool {
+	if k.Key == tcell.KeyCtrlC {
+		return true
+	}
+	if k.Key == tcell.KeyRune && (k.Rune == 'c' || k.Rune == 'C') && k.Mod&tcell.ModCtrl != 0 {
+		return true
+	}
+	return false
+}
+
+// NormalizeKey converts a tcell key to a shared Key enum value.
+// Returns KeyUnknown for unrecognized keys.
+func NormalizeKey(tcellKey tcell.Key, rune rune) input.Key {
+	if rune != 0 && tcellKey != tcell.KeyRune {
+		return input.KeyRune
+	}
+
+	switch tcellKey {
+	case tcell.KeyRune:
+		if rune != 0 {
+			return input.KeyRune
+		}
+		return input.KeyUnknown
+	case tcell.KeyEnter:
+		return input.KeyEnter
+	case tcell.KeyEsc:
+		return input.KeyEsc
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		return input.KeyBackspace
+	case tcell.KeyTab:
+		return input.KeyTab
+	case tcell.KeyUp:
+		return input.KeyUp
+	case tcell.KeyDown:
+		return input.KeyDown
+	case tcell.KeyLeft:
+		return input.KeyLeft
+	case tcell.KeyRight:
+		return input.KeyRight
+	case tcell.KeyHome:
+		return input.KeyHome
+	case tcell.KeyEnd:
+		return input.KeyEnd
+	case tcell.KeyPgUp:
+		return input.KeyPgUp
+	case tcell.KeyPgDn:
+		return input.KeyPgDown
+	case tcell.KeyDelete:
+		return input.KeyDelete
+	case tcell.KeyInsert:
+		return input.KeyInsert
+	default:
+		return input.KeyUnknown
+	}
 }
 
 // Event is a unified internal event.

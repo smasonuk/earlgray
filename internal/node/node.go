@@ -2,6 +2,7 @@
 package node
 
 import (
+	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/style"
 )
 
@@ -25,10 +26,7 @@ const (
 )
 
 // KeyPress holds data delivered to an OnKey handler.
-type KeyPress struct {
-	Rune rune
-	Mod  int // modifier bitmask (matches tcell.ModMask)
-}
+type KeyPress = input.KeyPress
 
 // KeyHandler processes a key press. Returns true if the event was consumed.
 type KeyHandler func(KeyPress) bool

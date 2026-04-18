@@ -3,7 +3,9 @@ package runtime
 import (
 	"testing"
 
+	"github.com/gdamore/tcell/v2"
 	"github.com/smason/earlgray/internal/event"
+	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/style"
 )
@@ -343,5 +345,175 @@ func TestRunLayout(t *testing.T) {
 		if child.layout.Rect.W != 20 {
 			t.Errorf("child width: %d, want 20", child.layout.Rect.W)
 		}
+	}
+}
+
+func TestUseFocusedWithDirectFocusableChild(t *testing.T) {
+	focusedValues := []bool{}
+	compFn := func() *node.Node {
+		focusedValues = append(focusedValues, IsFocused())
+		return focusableND()
+	}
+	compID := uintptr(5555)
+
+	rt := New()
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: compID}
+	rt.Update(n)
+	// After initial mount, focus is set and may mark dirty. Re-render to get updated focused state.
+	if rt.IsDirty() {
+		rt.Update(n)
+	}
+
+	// Should have rendered at least twice if focus was set, or once if nothing is focusable
+	if len(focusedValues) == 0 {
+		t.Fatal("component should have been rendered")
+	}
+	// Last render should show focused=true since the component contains the focused instance
+	if !focusedValues[len(focusedValues)-1] {
+		t.Errorf("UseFocused should be true for focused component's subtree. Values: %v", focusedValues)
+	}
+}
+
+func TestUseFocusedThroughNonFocusableWrapper(t *testing.T) {
+	focusedValues := []bool{}
+	compFn := func() *node.Node {
+		focusedValues = append(focusedValues, IsFocused())
+		// Return a non-focusable wrapper containing the focusable node
+		return viewND(focusableND())
+	}
+	compID := uintptr(6666)
+
+	rt := New()
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: compID}
+	rt.Update(n)
+	if rt.IsDirty() {
+		rt.Update(n)
+	}
+
+	if len(focusedValues) == 0 {
+		t.Fatal("component should have been rendered")
+	}
+	if !focusedValues[len(focusedValues)-1] {
+		t.Errorf("UseFocused should be true when focused node is nested through non-focusable wrapper. Values: %v", focusedValues)
+	}
+}
+
+func TestUseFocusedThroughKeyedChild(t *testing.T) {
+	focusedValues := []bool{}
+	compFn := func() *node.Node {
+		focusedValues = append(focusedValues, IsFocused())
+		return keyedND("wrapper", focusableND())
+	}
+	compID := uintptr(7777)
+
+	rt := New()
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: compID}
+	rt.Update(n)
+	if rt.IsDirty() {
+		rt.Update(n)
+	}
+
+	if len(focusedValues) == 0 {
+		t.Fatal("component should have been rendered")
+	}
+	if !focusedValues[len(focusedValues)-1] {
+		t.Errorf("UseFocused should be true when focused node is nested through keyed child. Values: %v", focusedValues)
+	}
+}
+
+func TestUseFocusedFalseForSiblingComponent(t *testing.T) {
+	focusedValues1 := []bool{}
+	focusedValues2 := []bool{}
+
+	compFn1 := func() *node.Node {
+		focusedValues1 = append(focusedValues1, IsFocused())
+		return focusableND()
+	}
+	compID1 := uintptr(8888)
+
+	compFn2 := func() *node.Node {
+		focusedValues2 = append(focusedValues2, IsFocused())
+		return viewND() // non-focusable
+	}
+	compID2 := uintptr(9999)
+
+	rt := New()
+	n := viewND(
+		&node.Node{Kind: node.ComponentKind, CompFn: compFn1, CompID: compID1},
+		&node.Node{Kind: node.ComponentKind, CompFn: compFn2, CompID: compID2},
+	)
+	rt.Update(n)
+	if rt.IsDirty() {
+		rt.Update(n)
+	}
+
+	if len(focusedValues1) == 0 || len(focusedValues2) == 0 {
+		t.Fatal("both components should have been rendered")
+	}
+	if !focusedValues1[len(focusedValues1)-1] {
+		t.Errorf("first component should have focused true. Values: %v", focusedValues1)
+	}
+	if focusedValues2[len(focusedValues2)-1] {
+		t.Errorf("second sibling component should have focused false. Values: %v", focusedValues2)
+	}
+}
+
+func TestNormalizeModNone(t *testing.T) {
+	got := normalizeMod(0)
+	if got != 0 {
+		t.Errorf("normalizeMod(0) = %v, want 0", got)
+	}
+}
+
+func TestNormalizeModCtrl(t *testing.T) {
+	got := normalizeMod(tcell.ModCtrl)
+	if got != input.ModCtrl {
+		t.Errorf("normalizeMod(ModCtrl) = %v, want ModCtrl", got)
+	}
+}
+
+func TestNormalizeModAlt(t *testing.T) {
+	got := normalizeMod(tcell.ModAlt)
+	if got != input.ModAlt {
+		t.Errorf("normalizeMod(ModAlt) = %v, want ModAlt", got)
+	}
+}
+
+func TestNormalizeModShift(t *testing.T) {
+	got := normalizeMod(tcell.ModShift)
+	if got != input.ModShift {
+		t.Errorf("normalizeMod(ModShift) = %v, want ModShift", got)
+	}
+}
+
+func TestNormalizeModCtrlAlt(t *testing.T) {
+	got := normalizeMod(tcell.ModCtrl | tcell.ModAlt)
+	expected := input.ModCtrl | input.ModAlt
+	if got != expected {
+		t.Errorf("normalizeMod(ModCtrl|ModAlt) = %v, want %v", got, expected)
+	}
+}
+
+func TestNormalizeModCtrlShift(t *testing.T) {
+	got := normalizeMod(tcell.ModCtrl | tcell.ModShift)
+	expected := input.ModCtrl | input.ModShift
+	if got != expected {
+		t.Errorf("normalizeMod(ModCtrl|ModShift) = %v, want %v", got, expected)
+	}
+}
+
+func TestNormalizeModAltShift(t *testing.T) {
+	got := normalizeMod(tcell.ModAlt | tcell.ModShift)
+	expected := input.ModAlt | input.ModShift
+	if got != expected {
+		t.Errorf("normalizeMod(ModAlt|ModShift) = %v, want %v", got, expected)
+	}
+}
+
+func TestNormalizeModAll(t *testing.T) {
+	got := normalizeMod(tcell.ModCtrl | tcell.ModAlt | tcell.ModShift)
+	expected := input.ModCtrl | input.ModAlt | input.ModShift
+	if got != expected {
+		t.Errorf("normalizeMod(ModCtrl|ModAlt|ModShift) = %v, want %v", got, expected)
 	}
 }

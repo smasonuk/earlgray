@@ -151,3 +151,42 @@ func TestDrawTextClipped(t *testing.T) {
 		t.Errorf("expected space at (5,0), got %q", b.At(5, 0).Rune)
 	}
 }
+
+func TestDrawWideCharacter(t *testing.T) {
+	// "界" is a CJK character with width 2
+	b := NewBuffer(5, 1)
+	b.DrawTextClipped(0, 0, "a界c", CellStyle{}, 0, 0, 5, 1)
+	// First cell should be 'a'
+	if b.At(0, 0).Rune != 'a' {
+		t.Errorf("pos 0: expected 'a', got %q", b.At(0, 0).Rune)
+	}
+	// Second cell should be '界'
+	if b.At(1, 0).Rune != '界' {
+		t.Errorf("pos 1: expected '界', got %q", b.At(1, 0).Rune)
+	}
+	// Third cell should be a space (filler for wide char)
+	if b.At(2, 0).Rune != ' ' {
+		t.Errorf("pos 2: expected space, got %q", b.At(2, 0).Rune)
+	}
+	// Fourth cell should be 'c'
+	if b.At(3, 0).Rune != 'c' {
+		t.Errorf("pos 3: expected 'c', got %q", b.At(3, 0).Rune)
+	}
+}
+
+func TestDrawWideCharacterNotPartiallyClipped(t *testing.T) {
+	// "界" is width 2, so if clip boundary is at column 2, it shouldn't be drawn
+	b := NewBuffer(10, 1)
+	// Draw "a界" with clip boundary at column 2 (only room for 1 wide char)
+	// "a" takes column 0, but "界" would need columns 1-2, and clip is at 2
+	// So "界" should not be drawn at all
+	b.DrawTextClipped(0, 0, "a界", CellStyle{}, 0, 0, 2, 1)
+	// Position 0 should have 'a'
+	if b.At(0, 0).Rune != 'a' {
+		t.Errorf("pos 0: expected 'a', got %q", b.At(0, 0).Rune)
+	}
+	// Position 1 should be space (nothing written there)
+	if b.At(1, 0).Rune != ' ' {
+		t.Errorf("pos 1: expected space, got %q", b.At(1, 0).Rune)
+	}
+}
