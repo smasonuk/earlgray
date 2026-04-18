@@ -1333,3 +1333,245 @@ func updateUntilClean(rt *runtime.Runtime, root Node) {
 		rt.Update(root)
 	}
 }
+
+func TestCheckboxReturnsComponentNode(t *testing.T) {
+	got := Checkbox(CheckboxProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("Checkbox should return ComponentKind, got %v", got.Kind)
+	}
+}
+
+func TestCheckboxSpaceCallsOnChange(t *testing.T) {
+	got := false
+	rt := runtime.New()
+
+	root := Checkbox(CheckboxProps{
+		Value:    false,
+		OnChange: func(next bool) { got = next },
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRune, Rune: ' '},
+	})
+
+	if !consumed {
+		t.Fatal("Space should be consumed")
+	}
+	if !got {
+		t.Fatal("Checkbox should call OnChange(true)")
+	}
+}
+
+func TestCheckboxEnterCallsOnChange(t *testing.T) {
+	got := true
+	rt := runtime.New()
+
+	root := Checkbox(CheckboxProps{
+		Value:    true,
+		OnChange: func(next bool) { got = next },
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnter},
+	})
+
+	if !consumed {
+		t.Fatal("Enter should be consumed")
+	}
+	if got {
+		t.Fatal("Checkbox should call OnChange(false)")
+	}
+}
+
+func TestCheckboxWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := Checkbox(CheckboxProps{Value: false})
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRune, Rune: ' '},
+	})
+
+	if consumed {
+		t.Fatal("Checkbox without OnChange should return false")
+	}
+}
+
+func TestDisabledCheckboxDoesNotCallOnChange(t *testing.T) {
+	called := false
+	rt := runtime.New()
+
+	root := Checkbox(CheckboxProps{
+		Value:    false,
+		Disabled: true,
+		OnChange: func(bool) { called = true },
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRune, Rune: ' '},
+	})
+
+	if consumed || called {
+		t.Fatal("Disabled Checkbox should not consume or call OnChange")
+	}
+}
+
+func TestListReturnsComponentNode(t *testing.T) {
+	got := List(ListProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("List should return ComponentKind, got %v", got.Kind)
+	}
+}
+
+func TestListRendersItemsVerticallyByDefault(t *testing.T) {
+	rt := runtime.New()
+
+	root := List(ListProps{
+		Items:         []string{"One", "Two"},
+		SelectedIndex: 0,
+		AutoFocus:     true,
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != '>' {
+		t.Fatalf("first item should render at row 0, got %q", got)
+	}
+	if got := buf.At(2, 0).Rune; got != 'O' {
+		t.Fatalf("first item text should render at row 0, got %q", got)
+	}
+	if got := buf.At(2, 1).Rune; got != 'T' {
+		t.Fatalf("second item text should render at row 1, got %q", got)
+	}
+}
+
+func TestListDownCallsOnSelect(t *testing.T) {
+	got := -1
+	rt := runtime.New()
+
+	root := List(ListProps{
+		Items:         []string{"One", "Two", "Three"},
+		SelectedIndex: 0,
+		OnSelect:      func(i int) { got = i },
+		AutoFocus:     true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if !consumed {
+		t.Fatal("Down should be consumed")
+	}
+	if got != 1 {
+		t.Fatalf("OnSelect = %d, want 1", got)
+	}
+}
+
+func TestListUpCallsOnSelect(t *testing.T) {
+	got := -1
+	rt := runtime.New()
+
+	root := List(ListProps{
+		Items:         []string{"One", "Two", "Three"},
+		SelectedIndex: 2,
+		OnSelect:      func(i int) { got = i },
+		AutoFocus:     true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	})
+
+	if !consumed {
+		t.Fatal("Up should be consumed")
+	}
+	if got != 1 {
+		t.Fatalf("OnSelect = %d, want 1", got)
+	}
+}
+
+func TestListMovementAtEdgesReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := List(ListProps{
+		Items:         []string{"One", "Two"},
+		SelectedIndex: 0,
+		OnSelect:      func(int) {},
+		AutoFocus:     true,
+	})
+
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	}); consumed {
+		t.Fatal("Up at first item should return false")
+	}
+}
+
+func TestListWithoutOnSelectReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := List(ListProps{
+		Items:         []string{"One", "Two"},
+		SelectedIndex: 0,
+		AutoFocus:     true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed {
+		t.Fatal("List without OnSelect should return false")
+	}
+}
+
+func TestDisabledListDoesNotCallOnSelect(t *testing.T) {
+	called := false
+	rt := runtime.New()
+
+	root := List(ListProps{
+		Items:         []string{"One", "Two"},
+		SelectedIndex: 0,
+		Disabled:      true,
+		OnSelect:      func(int) { called = true },
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed || called {
+		t.Fatal("Disabled List should not consume or call OnSelect")
+	}
+}

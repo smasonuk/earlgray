@@ -319,6 +319,8 @@ type CheckboxProps struct {
 }
 
 // Checkbox creates a focusable checkbox that responds to Space and Enter.
+// It is a controlled component: pass the current value through Value and receive
+// toggles through OnChange. The parent is responsible for updating state.
 func Checkbox(props CheckboxProps) Node {
 	return Component(func() Node {
 		focused := UseFocused()
@@ -344,9 +346,10 @@ func Checkbox(props CheckboxProps) Node {
 						return false
 					}
 					if ev.Key == KeyEnter || (ev.Key == KeyRune && ev.Rune == ' ') {
-						if props.OnChange != nil {
-							props.OnChange(!props.Value)
+						if props.OnChange == nil {
+							return false
 						}
+						props.OnChange(!props.Value)
 						return true
 					}
 					return false
@@ -638,10 +641,14 @@ type ListProps struct {
 }
 
 // List creates a focusable vertical list where items are navigated with Up/Down keys.
-// It is a controlled component: the parent must manage SelectedIndex and OnSelect.
+// It is a controlled component: it displays Items and calls OnSelect with the
+// next index. The parent must update SelectedIndex for the visual state to change.
 func List(props ListProps) Node {
 	return Component(func() Node {
 		focused := UseFocused()
+
+		s := props.Style
+		s.Direction = Column
 
 		items := make([]Node, len(props.Items))
 		for i, label := range props.Items {
@@ -660,27 +667,26 @@ func List(props ListProps) Node {
 
 		return ViewWith(
 			ViewProps{
-				Style:     props.Style,
+				Style:     s,
 				Focusable: !props.Disabled,
 				AutoFocus: props.AutoFocus,
 				Disabled:  props.Disabled,
 				OnKey: func(ev KeyEvent) bool {
-					if props.Disabled {
+					if props.Disabled || props.OnSelect == nil || len(props.Items) == 0 {
 						return false
 					}
+
+					selected := clampInt(props.SelectedIndex, 0, len(props.Items)-1)
+
 					switch ev.Key {
 					case KeyUp:
-						if props.SelectedIndex > 0 {
-							if props.OnSelect != nil {
-								props.OnSelect(props.SelectedIndex - 1)
-							}
+						if selected > 0 {
+							props.OnSelect(selected - 1)
 							return true
 						}
 					case KeyDown:
-						if props.SelectedIndex < len(props.Items)-1 {
-							if props.OnSelect != nil {
-								props.OnSelect(props.SelectedIndex + 1)
-							}
+						if selected < len(props.Items)-1 {
+							props.OnSelect(selected + 1)
 							return true
 						}
 					}
