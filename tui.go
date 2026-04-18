@@ -921,8 +921,14 @@ func Select(props SelectProps) Node {
 					case KeyRight, KeyDown, KeyEnter:
 						return selectIndex(nextIndex())
 					case KeyHome:
+						if selected == 0 {
+							return false
+						}
 						return selectIndex(0)
 					case KeyEnd:
+						if selected == len(props.Options)-1 {
+							return false
+						}
 						return selectIndex(len(props.Options) - 1)
 					case KeyRune:
 						if ev.Rune == ' ' {

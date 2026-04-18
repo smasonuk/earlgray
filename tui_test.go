@@ -1852,10 +1852,14 @@ func TestSelectPrevCallsOnChange(t *testing.T) {
 
 	updateUntilClean(rt, root)
 
-	rt.HandleEvent(event.Event{
+	consumed := rt.HandleEvent(event.Event{
 		Kind: event.KeyKind,
 		Key:  event.Key{Key: tcell.KeyLeft},
 	})
+
+	if !consumed {
+		t.Fatal("Left should be consumed")
+	}
 
 	if got != "blue" {
 		t.Fatalf("Left at start should wrap to last: got %q, want blue", got)
@@ -1879,20 +1883,67 @@ func TestSelectHomeEndCallsOnChange(t *testing.T) {
 
 	updateUntilClean(rt, root)
 
-	rt.HandleEvent(event.Event{
+	if consumed := rt.HandleEvent(event.Event{
 		Kind: event.KeyKind,
 		Key:  event.Key{Key: tcell.KeyHome},
-	})
+	}); !consumed {
+		t.Fatal("Home should be consumed")
+	}
 	if got != "red" {
 		t.Fatalf("Home: got %q, want red", got)
 	}
 
-	rt.HandleEvent(event.Event{
+	if consumed := rt.HandleEvent(event.Event{
 		Kind: event.KeyKind,
 		Key:  event.Key{Key: tcell.KeyEnd},
-	})
+	}); !consumed {
+		t.Fatal("End should be consumed")
+	}
 	if got != "green" {
 		t.Fatalf("End: got %q, want green", got)
+	}
+}
+
+func TestSelectHomeEndAtEdgesReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		OnChange:  func(string) {},
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyHome},
+	}); consumed {
+		t.Fatal("Home at first option should return false")
+	}
+
+	root = Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "blue",
+		OnChange:  func(string) {},
+		AutoFocus: true,
+	})
+
+	rt.Update(root)
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnd},
+	}); consumed {
+		t.Fatal("End at last option should return false")
 	}
 }
 
