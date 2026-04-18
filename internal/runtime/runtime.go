@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
@@ -106,9 +107,16 @@ type Runtime struct {
 	scopeStack []focusScopeFrame
 
 	pendingEffects []pendingEffect
-	post           func(func())
+	appCtx         AppContext
 
 	lastMouseButtons input.MouseButton
+}
+
+// AppContext provides app-level actions to components.
+type AppContext struct {
+	Post  func(func())
+	Quit  func()
+	Every func(time.Duration, func()) func()
 }
 
 // New creates a new Runtime.
@@ -121,9 +129,20 @@ func (r *Runtime) MarkDirty() {
 	r.dirty = true
 }
 
+// SetAppContext configures the app context for UseApp.
+func (r *Runtime) SetAppContext(ctx AppContext) {
+	r.appCtx = ctx
+}
+
+// GetAppContext returns the current app context.
+func (r *Runtime) GetAppContext() AppContext {
+	return r.appCtx
+}
+
 // SetPost configures an optional callback used to marshal work onto the app loop.
+// Deprecated: use SetAppContext.
 func (r *Runtime) SetPost(post func(func())) {
-	r.post = post
+	r.appCtx.Post = post
 }
 
 // IsDirty reports whether a re-render is needed.
@@ -158,8 +177,8 @@ func (r *Runtime) enqueue(fn func()) {
 	if fn == nil {
 		return
 	}
-	if r.post != nil {
-		r.post(fn)
+	if r.appCtx.Post != nil {
+		r.appCtx.Post(fn)
 		return
 	}
 	fn()

@@ -34,16 +34,69 @@ func IsFocused() bool {
 	return containsInstance(inst, rt.focused)
 }
 
+// UseApp returns the current AppContext.
+// It must only be called from within a component function.
+func UseApp() AppContext {
+	if renderingInstance == nil {
+		panic("tui: UseApp called outside component render")
+	}
+	return renderingInstance.runtime.GetAppContext()
+}
+
 // UseState implements React-like state hooks.
 // T must match the type used when the hook slot was first initialized.
 func UseState[T any](initial T) (T, func(T)) {
+	val, setter, _ := UseStateWithUpdater(initial)
+	return val, setter
+}
+
+// UseStateWithUpdater implements React-like state hooks with a functional updater.
+// T must match the type used when the hook slot was first initialized.
+func UseStateWithUpdater[T any](initial T) (T, func(T), func(func(T) T)) {
 	inst, idx, val := bindStateHook(initial)
 
 	setter := func(v T) {
 		enqueueStateUpdate(inst, idx, v, nil)
 	}
 
-	return val, setter
+	updater := func(fn func(T) T) {
+		enqueueFunctionalStateUpdate(inst, idx, fn)
+	}
+
+	return val, setter, updater
+}
+
+func enqueueFunctionalStateUpdate[T any](inst *Instance, idx int, fn func(T) T) {
+	rt := inst.runtime
+	if rt == nil {
+		return
+	}
+	rt.enqueue(func() {
+		if !isInstanceMounted(rt.root, inst) {
+			return
+		}
+		if idx < 0 || idx >= len(inst.hookSlots) {
+			return
+		}
+		slot := &inst.hookSlots[idx]
+		if slot.kind != hookState {
+			return
+		}
+		currentVal := slot.state.(T)
+		slot.state = fn(currentVal)
+		rt.MarkDirty()
+	})
+}
+
+// UseReducer implements React-like reducer hooks.
+func UseReducer[S any, A any](reducer func(S, A) S, initial S) (S, func(A)) {
+	val, _, updater := UseStateWithUpdater(initial)
+	dispatch := func(action A) {
+		updater(func(state S) S {
+			return reducer(state, action)
+		})
+	}
+	return val, dispatch
 }
 
 // UseStateGuarded is an internal variant of UseState that can drop queued

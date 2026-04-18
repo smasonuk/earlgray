@@ -92,6 +92,11 @@ func View(s Style, children ...Node) Node {
 	}
 }
 
+// Fragment groups children without adding visual styling.
+func Fragment(children ...Node) Node {
+	return View(Style{}, children...)
+}
+
 // MouseButton identifies which mouse button or wheel direction was activated.
 type MouseButton = input.MouseButton
 
@@ -241,10 +246,37 @@ func Component(fn func() Node) Node {
 	}
 }
 
+// ComponentWithKey wraps a function component with a reconciliation key.
+// Use this for inline components whose state must be preserved across renders.
+func ComponentWithKey(key string, fn func() Node) Node {
+	return Keyed(key, Component(fn))
+}
+
 // UseState returns the current value of a state slot and a setter function.
 // It must only be called from within a component function.
 func UseState[T any](initial T) (T, func(T)) {
 	return runtime.UseState(initial)
+}
+
+// UseStateWithUpdater returns the current value of a state slot, a setter function,
+// and a functional updater.
+// It must only be called from within a component function.
+func UseStateWithUpdater[T any](initial T) (T, func(T), func(func(T) T)) {
+	return runtime.UseStateWithUpdater(initial)
+}
+
+// UseReducer returns the current state and a dispatch function to apply actions.
+// It must only be called from within a component function.
+func UseReducer[S any, A any](reducer func(S, A) S, initial S) (S, func(A)) {
+	return runtime.UseReducer(reducer, initial)
+}
+
+// UseRef returns a stable pointer for component-local mutable state that does
+// not itself trigger rerenders when mutated.
+//
+// It must only be called from within a component function.
+func UseRef[T any](initial T) *T {
+	return runtime.UseRef(initial)
 }
 
 // UseEffect registers a component-local side effect.
@@ -1319,6 +1351,59 @@ type AppHandle struct {
 	Every func(time.Duration, func()) func()
 }
 
+// AppContext provides app-level actions to components.
+type AppContext = runtime.AppContext
+
+// UseApp returns the current AppContext.
+// It must only be called from within a component function.
+func UseApp() AppContext {
+	return runtime.UseApp()
+}
+
+// UseChannel registers a subscription to a channel.
+// It starts a goroutine that reads values from the channel and executes
+// onValue for each received value on the EarlGray app loop.
+// The subscription is stopped when the component unmounts or dependencies change.
+// If ch is nil, no subscription is created.
+func UseChannel[T any](ch <-chan T, onValue func(T), deps ...any) {
+	appCtx := UseApp()
+
+	UseEffect(func() func() {
+		if ch == nil {
+			return nil
+		}
+
+		stop := make(chan struct{})
+		var stopped atomic.Bool
+
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				case val, ok := <-ch:
+					if !ok {
+						return
+					}
+					if stopped.Load() {
+						return
+					}
+					if onValue != nil {
+						appCtx.Post(func() {
+							onValue(val)
+						})
+					}
+				}
+			}
+		}()
+
+		return func() {
+			stopped.Store(true)
+			close(stop)
+		}
+	}, deps...)
+}
+
 // RunOptions configures the TUI event loop.
 type RunOptions struct {
 	// DisableCtrlCQuit prevents EarlGray from automatically quitting on Ctrl-C.
@@ -1433,7 +1518,11 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 	}
 
 	rt := runtime.New()
-	rt.SetPost(handle.Post)
+	rt.SetAppContext(AppContext{
+		Post:  handle.Post,
+		Quit:  handle.Quit,
+		Every: handle.Every,
+	})
 	defer rt.Dispose()
 	w, h2 := h.Size()
 
