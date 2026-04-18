@@ -223,7 +223,6 @@ func TestTextInputFocusedCursorSitsAfterValueForAutoWidth(t *testing.T) {
 	}
 }
 
-// Ticket 1: Add tests proving the cursor position uses a rune index and display width correctly.
 func TestTextInputCursorUsesDisplayWidthForWideRunes(t *testing.T) {
 	rt := runtime.New()
 
@@ -254,7 +253,6 @@ func TestTextInputCursorUsesDisplayWidthForWideRunes(t *testing.T) {
 	}
 }
 
-// Ticket 2: Left/Right/Home/End
 func TestTextInputLeftMovesCursorOneRune(t *testing.T) {
 	rt := runtime.New()
 	root := View(Style{Direction: Column}, TextInput(TextInputProps{
@@ -380,7 +378,6 @@ func TestTextInputMovementAtEdgesReturnsFalse(t *testing.T) {
 	}
 }
 
-// Ticket 3
 func TestTextInputTypingInsertsAtCursor(t *testing.T) {
 	got := ""
 	rt := runtime.New()
@@ -429,7 +426,6 @@ func TestTextInputTypingWideRuneInsertsAtCursor(t *testing.T) {
 	}
 }
 
-// Ticket 4
 func TestTextInputBackspaceDeletesBeforeCursor(t *testing.T) {
 	got := ""
 	rt := runtime.New()
@@ -474,7 +470,6 @@ func TestTextInputBackspaceDeletesWideRuneBeforeCursor(t *testing.T) {
 	}
 }
 
-// Ticket 5
 func TestTextInputDeleteRemovesRuneAtCursor(t *testing.T) {
 	got := ""
 	rt := runtime.New()
@@ -542,7 +537,6 @@ func TestTextInputDeleteAtEndReturnsFalse(t *testing.T) {
 	}
 }
 
-// Ticket 6
 func TestTextInputPlaceholderCursorStartsAtContentStart(t *testing.T) {
 	rt := runtime.New()
 
@@ -574,7 +568,6 @@ func TestTextInputPlaceholderCursorStartsAtContentStart(t *testing.T) {
 	}
 }
 
-// Ticket 7
 func TestTextInputEnterCallsOnSubmit(t *testing.T) {
 	submitted := ""
 	rt := runtime.New()
@@ -629,7 +622,6 @@ func TestDisabledTextInputEnterDoesNotSubmit(t *testing.T) {
 	}
 }
 
-// Ticket 8
 func TestDisabledTextInputDoesNotCallOnChange(t *testing.T) {
 	called := false
 	rt := runtime.New()
@@ -687,7 +679,6 @@ func TestDisabledTextInputDoesNotCallOnSubmit(t *testing.T) {
 	}
 }
 
-// Ticket 9
 func TestDisabledButtonDoesNotCallOnPressOnEnter(t *testing.T) {
 	called := false
 	rt := runtime.New()
@@ -746,7 +737,6 @@ func TestDisabledButtonSkippedByFocusTraversal(t *testing.T) {
 	}
 }
 
-// Ticket 11
 func TestTextInputFixedWidthCursorScrollsAtEnd(t *testing.T) {
 	rt := runtime.New()
 	root := View(Style{Direction: Column}, TextInput(TextInputProps{
