@@ -393,3 +393,81 @@ func TestOverlayWithStyleHonorsFixedSizeAndPadding(t *testing.T) {
 		t.Fatalf("overlay child rect = %+v, want %+v", tree.Children[0].Result.Rect, tree.Result.Content)
 	}
 }
+
+func TestComponentIntrinsicMeasurementHonorsRenderedFixedWidth(t *testing.T) {
+	componentChild := &node.Node{
+		Kind: node.ComponentKind,
+		Children: []*node.Node{
+			viewNode(style.Style{Width: style.Cells(10), Height: style.Cells(1)}),
+		},
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Row},
+		componentChild,
+		viewNode(style.Style{Width: style.Cells(5), Height: style.Cells(1)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	first := tree.Children[0].Result.Rect
+	second := tree.Children[1].Result.Rect
+
+	if first.W != 10 {
+		t.Fatalf("component-rendered fixed width = %d, want 10", first.W)
+	}
+	if second.X != 10 {
+		t.Fatalf("second child X = %d, want 10", second.X)
+	}
+}
+
+func TestComponentIntrinsicMeasurementHonorsRenderedFixedHeight(t *testing.T) {
+	componentChild := &node.Node{
+		Kind: node.ComponentKind,
+		Children: []*node.Node{
+			viewNode(style.Style{Width: style.Cells(1), Height: style.Cells(4)}),
+		},
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Column},
+		componentChild,
+		viewNode(style.Style{Width: style.Cells(1), Height: style.Cells(2)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	first := tree.Children[0].Result.Rect
+	second := tree.Children[1].Result.Rect
+
+	if first.H != 4 {
+		t.Fatalf("component-rendered fixed height = %d, want 4", first.H)
+	}
+	if second.Y != 4 {
+		t.Fatalf("second child Y = %d, want 4", second.Y)
+	}
+}
+
+func TestOverlayIntrinsicMeasurementIncludesPaddingAndBorder(t *testing.T) {
+	overlay := &node.Node{
+		Kind: node.OverlayKind,
+		Style: style.Style{
+			Padding: style.All(1),
+			Border:  style.BorderAll,
+		},
+		Children: []*node.Node{
+			{Kind: node.TextKind, Text: "abc"},
+		},
+	}
+
+	parent := viewNode(style.Style{Direction: style.Row}, overlay)
+	tree := Layout(parent, exactC(80, 24))
+
+	got := tree.Children[0].Result.Rect
+
+	// child width 3 + padding left/right 2 + border left/right 2 = 7
+	// child height 1 + padding top/bottom 2 + border top/bottom 2 = 5
+	if got.W != 7 || got.H != 5 {
+		t.Fatalf("overlay measured rect = %+v, want 7x5", got)
+	}
+}

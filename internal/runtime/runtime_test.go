@@ -830,3 +830,38 @@ func TestTopmostFocusScopeWins(t *testing.T) {
 		t.Errorf("expected focus in topmost scope (scope2), got %v", rt.focused)
 	}
 }
+
+func TestDuplicateKeysDoNotReuseSameInstanceTwice(t *testing.T) {
+	rt := New()
+
+	// Initial render with one keyed child.
+	node1 := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			{Kind: node.ViewKind, Key: "a"},
+		},
+	}
+	rt.Update(node1)
+	instA := rt.root.children[0]
+
+	// Update with two children sharing the same key "a".
+	// The runtime should NOT reuse instA for both.
+	node2 := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			{Kind: node.ViewKind, Key: "a"},
+			{Kind: node.ViewKind, Key: "a"},
+		},
+	}
+	rt.Update(node2)
+
+	first := rt.root.children[0]
+	second := rt.root.children[1]
+
+	if first != instA {
+		t.Errorf("first child should be instA, got %p", first)
+	}
+	if second == instA {
+		t.Errorf("second child should NOT be instA (duplicate key)")
+	}
+}

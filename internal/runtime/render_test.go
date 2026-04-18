@@ -413,3 +413,101 @@ func TestRenderOverlayDrawsLaterChildOnTop(t *testing.T) {
 		t.Errorf("overlay cell (0,0): got %q, want 'B'", got)
 	}
 }
+
+func TestRenderOverlayWithBackgroundFillsOwnRect(t *testing.T) {
+	bg := color.ANSIColor(1) // red
+	nd := &node.Node{
+		Kind: node.OverlayKind,
+		Style: style.Style{
+			Width:      style.Cells(10),
+			Height:     style.Cells(5),
+			Background: bg,
+		},
+	}
+	buf := renderHelper(nd, 20, 10)
+
+	// Check points inside the overlay
+	if got := buf.At(0, 0).Style.Bg; got != bg {
+		t.Errorf("at (0,0) bg = %v, want red", got)
+	}
+	if got := buf.At(9, 4).Style.Bg; got != bg {
+		t.Errorf("at (9,4) bg = %v, want red", got)
+	}
+
+	// Check point outside the overlay
+	if got := buf.At(10, 5).Style.Bg; got == bg {
+		t.Error("at (10,5) bg should not be red")
+	}
+}
+
+func TestRenderOverlayWithoutBackgroundStaysTransparent(t *testing.T) {
+	parent := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Width:      style.Cells(10),
+			Height:     style.Cells(5),
+			Background: color.ANSIColor(2), // green
+		},
+		Children: []*node.Node{
+			{
+				Kind: node.OverlayKind,
+				Style: style.Style{
+					Width:  style.Cells(5),
+					Height: style.Cells(2),
+					// No background
+				},
+			},
+		},
+	}
+	buf := renderHelper(parent, 10, 5)
+
+	// Overlay area should still be green from parent
+	if got := buf.At(0, 0).Style.Bg; got != color.ANSIColor(2) {
+		t.Errorf("overlay area bg = %v, want green", got)
+	}
+}
+
+func TestRenderOverlayStyleInheritedByChildText(t *testing.T) {
+	nd := &node.Node{
+		Kind: node.OverlayKind,
+		Style: style.Style{
+			Width:      style.Cells(10),
+			Height:     style.Cells(5),
+			Foreground: color.ANSIColor(3), // yellow
+		},
+		Children: []*node.Node{
+			{Kind: node.TextKind, Text: "x"},
+		},
+	}
+	buf := renderHelper(nd, 10, 5)
+
+	if got := buf.At(0, 0).Style.Fg; got != color.ANSIColor(3) {
+		t.Errorf("text fg = %v, want yellow", got)
+	}
+}
+
+func TestRenderOverlayWithBorderDrawsBorder(t *testing.T) {
+	nd := &node.Node{
+		Kind: node.OverlayKind,
+		Style: style.Style{
+			Width:  style.Cells(5),
+			Height: style.Cells(3),
+			Border: style.BorderAll,
+		},
+	}
+	buf := renderHelper(nd, 5, 3)
+
+	// Check corners
+	if buf.At(0, 0).Rune == ' ' {
+		t.Error("top-left corner should not be space")
+	}
+	if buf.At(4, 0).Rune == ' ' {
+		t.Error("top-right corner should not be space")
+	}
+	if buf.At(0, 2).Rune == ' ' {
+		t.Error("bottom-left corner should not be space")
+	}
+	if buf.At(4, 2).Rune == ' ' {
+		t.Error("bottom-right corner should not be space")
+	}
+}

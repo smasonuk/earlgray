@@ -450,8 +450,9 @@ func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 
 		if nc.Key != "" {
 			// Try keyed match.
-			if o, ok := keyedOld[nc.Key]; ok {
+			if o, ok := keyedOld[nc.Key]; ok && sameKind(o, nc) {
 				matched = o
+				delete(keyedOld, nc.Key)
 			}
 		} else {
 			// Try positional match (same kind, no key).
@@ -474,6 +475,9 @@ func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 // sameKind reports whether an instance and new node have the same identity.
 func sameKind(inst *Instance, n *node.Node) bool {
 	if inst.kind != n.Kind {
+		return false
+	}
+	if inst.key != n.Key {
 		return false
 	}
 	if n.Kind == node.ComponentKind {

@@ -382,10 +382,12 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 	switch nd.Kind {
 	case node.TextKind:
 		return measureText(nd.Text, maxW, maxH)
+
 	case node.ViewKind:
 		s := nd.Style
 		bIns := s.Border.Insets()
 		ins := addInsets(s.Padding, bIns)
+
 		innerMaxW := maxW - ins.Left - ins.Right
 		innerMaxH := maxH - ins.Top - ins.Bottom
 		if innerMaxW < 0 {
@@ -394,27 +396,63 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		if innerMaxH < 0 {
 			innerMaxH = 0
 		}
+
 		cw, ch := measureChildrenIntrinsic(nd.Children, innerMaxW, innerMaxH, s.Direction, s.Gap)
+
+		measuredW := cw + ins.Left + ins.Right
+		measuredH := ch + ins.Top + ins.Bottom
+
+		w = measuredW
+		h = measuredH
+
+		if s.Width.Kind == style.DimCells {
+			w = s.Width.Value
+		}
+		if s.Height.Kind == style.DimCells {
+			h = s.Height.Value
+		}
+
+		w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
+		return w, h
+
+	case node.OverlayKind:
+		s := nd.Style
+		bIns := s.Border.Insets()
+		ins := addInsets(s.Padding, bIns)
+
+		innerMaxW := maxW - ins.Left - ins.Right
+		innerMaxH := maxH - ins.Top - ins.Bottom
+		if innerMaxW < 0 {
+			innerMaxW = 0
+		}
+		if innerMaxH < 0 {
+			innerMaxH = 0
+		}
+
+		cw, ch := 0, 0
+		for _, child := range nd.Children {
+			ccw, cch := measureIntrinsic(child, innerMaxW, innerMaxH)
+			if ccw > cw {
+				cw = ccw
+			}
+			if cch > ch {
+				ch = cch
+			}
+		}
+
 		w = cw + ins.Left + ins.Right
 		h = ch + ins.Top + ins.Bottom
-		if maxW > 0 && w > maxW {
-			w = maxW
+
+		if s.Width.Kind == style.DimCells {
+			w = s.Width.Value
 		}
-		if maxH > 0 && h > maxH {
-			h = maxH
+		if s.Height.Kind == style.DimCells {
+			h = s.Height.Value
 		}
+
+		w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
 		return w, h
-	case node.OverlayKind:
-		for _, child := range nd.Children {
-			cw, ch := measureIntrinsic(child, maxW, maxH)
-			if cw > w {
-				w = cw
-			}
-			if ch > h {
-				h = ch
-			}
-		}
-		return w, h
+
 	case node.ComponentKind, node.KeyedKind:
 		if len(nd.Children) == 1 {
 			return measureIntrinsic(nd.Children[0], maxW, maxH)
@@ -422,6 +460,37 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		return 0, 0
 	}
 	return 0, 0
+}
+
+func applyMeasuredMinMaxAndClamp(s style.Style, w, h, maxW, maxH int) (int, int) {
+	if s.MinWidth > 0 && w < s.MinWidth {
+		w = s.MinWidth
+	}
+	if s.MaxWidth > 0 && w > s.MaxWidth {
+		w = s.MaxWidth
+	}
+	if s.MinHeight > 0 && h < s.MinHeight {
+		h = s.MinHeight
+	}
+	if s.MaxHeight > 0 && h > s.MaxHeight {
+		h = s.MaxHeight
+	}
+
+	if maxW > 0 && w > maxW {
+		w = maxW
+	}
+	if maxH > 0 && h > maxH {
+		h = maxH
+	}
+
+	if w < 0 {
+		w = 0
+	}
+	if h < 0 {
+		h = 0
+	}
+
+	return w, h
 }
 
 // measureText returns the display dimensions of a plain text string.
