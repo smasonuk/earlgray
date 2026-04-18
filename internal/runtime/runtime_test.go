@@ -729,3 +729,106 @@ func TestNormalizeModAll(t *testing.T) {
 		t.Errorf("normalizeMod(ModCtrl|ModAlt|ModShift) = %v, want %v", got, expected)
 	}
 }
+
+func focusScopeND(children ...*node.Node) *node.Node {
+	return &node.Node{Kind: node.ViewKind, FocusScope: true, Children: children}
+}
+
+func TestFocusScopeTrapsTabTraversal(t *testing.T) {
+	rt := New()
+	background := focusableND()
+	f1 := focusableND()
+	f2 := focusableND()
+	scope := focusScopeND(f1, f2)
+	root := viewND(background, scope)
+	rt.Update(root)
+
+	// Initial focus should be in the focus scope because it's the topmost scope
+	// and we search for focusable nodes within it.
+	// Wait, actually background is focusable too.
+	// activeFocusRoot(root) will return 'scope'.
+	// So focusable nodes are [f1, f2].
+	if rt.focused.nd != f1 {
+		t.Fatalf("expected focus to be first node in scope, got %v", rt.focused)
+	}
+
+	rt.focusNext()
+	if rt.focused != rt.root.children[1].children[1] {
+		t.Error("focusNext should move to second node in scope")
+	}
+
+	rt.focusNext()
+	if rt.focused != rt.root.children[1].children[0] {
+		t.Error("focusNext should wrap back to first node in scope, skipping background")
+	}
+}
+
+func TestFocusScopeMovesFocusInsideWhenOpened(t *testing.T) {
+	rt := New()
+	background := focusableND()
+	rt.Update(background)
+	if rt.focused == nil {
+		t.Fatal("background should be focused")
+	}
+
+	// Update to add a focus scope.
+	f1 := focusableND()
+	scope := focusScopeND(f1)
+	root := viewND(background, scope)
+	rt.Update(root)
+
+	if rt.focused != rt.root.children[1].children[0] {
+		t.Error("focus should have moved into the new focus scope")
+	}
+}
+
+func TestFocusScopePreventsFallbackDeliveryToBackground(t *testing.T) {
+	rt := New()
+	backgroundHandled := false
+	background := &node.Node{
+		Kind:  node.ViewKind,
+		OnKey: func(kp node.KeyPress) bool { backgroundHandled = true; return true },
+	}
+	scopeHandled := false
+	scopeChild := &node.Node{
+		Kind:  node.ViewKind,
+		OnKey: func(kp node.KeyPress) bool { scopeHandled = true; return true },
+	}
+	scope := &node.Node{
+		Kind:       node.ViewKind,
+		FocusScope: true,
+		Children:   []*node.Node{scopeChild},
+	}
+	root := viewND(background, scope)
+	rt.Update(root)
+	rt.focused = nil // ensure fallback delivery
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'x'}})
+	if backgroundHandled {
+		t.Error("background should not have received key when focus scope is active")
+	}
+	if !scopeHandled {
+		t.Error("node inside focus scope should have received key")
+	}
+}
+
+func TestTopmostFocusScopeWins(t *testing.T) {
+	rt := New()
+	f1 := focusableND()
+	scope1 := focusScopeND(f1)
+
+	f2 := focusableND()
+	scope2 := focusScopeND(f2)
+
+	// Use Overlay to have two overlapping scopes.
+	// Later child (scope2) is topmost.
+	root := &node.Node{
+		Kind:     node.OverlayKind,
+		Children: []*node.Node{scope1, scope2},
+	}
+	rt.Update(root)
+
+	if rt.focused != rt.root.children[1].children[0] { // f2
+		t.Errorf("expected focus in topmost scope (scope2), got %v", rt.focused)
+	}
+}

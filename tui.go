@@ -92,18 +92,22 @@ type ViewProps struct {
 	Focusable bool
 	AutoFocus bool
 	Disabled  bool
+
+	// FocusScope traps focus traversal within this view's subtree.
+	FocusScope bool
 }
 
 // ViewWith creates a container node with props and children.
 func ViewWith(props ViewProps, children ...Node) Node {
 	return &inode.Node{
-		Kind:      inode.ViewKind,
-		Style:     props.Style,
-		Children:  children,
-		OnKey:     props.OnKey,
-		Focusable: props.Focusable,
-		AutoFocus: props.AutoFocus,
-		Disabled:  props.Disabled,
+		Kind:       inode.ViewKind,
+		Style:      props.Style,
+		Children:   children,
+		OnKey:      props.OnKey,
+		Focusable:  props.Focusable,
+		AutoFocus:  props.AutoFocus,
+		Disabled:   props.Disabled,
+		FocusScope: props.FocusScope,
 	}
 }
 
@@ -118,6 +122,21 @@ func Text(value string, opts ...TextOption) Node {
 		Text:     value,
 		TextOpts: textOpts,
 		Style:    textOpts.Style,
+	}
+}
+
+// Overlay stacks children on top of each other.
+// Each child receives the same layout bounds. Later children render over earlier children.
+func Overlay(children ...Node) Node {
+	return OverlayWith(Style{}, children...)
+}
+
+// OverlayWith is like Overlay but with an explicit style.
+func OverlayWith(style Style, children ...Node) Node {
+	return &inode.Node{
+		Kind:     inode.OverlayKind,
+		Style:    style,
+		Children: children,
 	}
 }
 
@@ -156,6 +175,53 @@ func UseState[T any](initial T) (T, func(T)) {
 // function.
 func UseFocused() bool {
 	return runtime.IsFocused()
+}
+
+// Router provides navigation state and actions.
+type Router struct {
+	Path    string
+	CanBack bool
+	Push    func(string)
+	Replace func(string)
+	Back    func() bool
+}
+
+// UseRouter returns a Router with the given initial path.
+// It uses UseState to maintain a navigation stack.
+func UseRouter(initial string) Router {
+	stack, setStack := UseState([]string{initial})
+
+	if len(stack) == 0 {
+		stack = []string{initial}
+	}
+
+	current := stack[len(stack)-1]
+
+	return Router{
+		Path:    current,
+		CanBack: len(stack) > 1,
+		Push: func(path string) {
+			next := append(append([]string{}, stack...), path)
+			setStack(next)
+		},
+		Replace: func(path string) {
+			next := append([]string{}, stack...)
+			if len(next) == 0 {
+				next = []string{path}
+			} else {
+				next[len(next)-1] = path
+			}
+			setStack(next)
+		},
+		Back: func() bool {
+			if len(stack) <= 1 {
+				return false
+			}
+			next := append([]string{}, stack[:len(stack)-1]...)
+			setStack(next)
+			return true
+		},
+	}
 }
 
 // ButtonProps configures a Button widget.
@@ -232,6 +298,47 @@ func Button(props ButtonProps) Node {
 				},
 			},
 			Text(props.Label, WithAlign(AlignCenter), WithTextStyle(Style{FlexGrow: 1})),
+		)
+	})
+}
+
+// DialogProps configures a Dialog widget.
+type DialogProps struct {
+	Style         Style
+	BackdropStyle Style
+	OnClose       func()
+	CloseOnEsc    bool
+}
+
+// Dialog returns a full-screen focus scope that:
+// 1. Draws a backdrop.
+// 2. Centers the dialog child.
+// 3. Calls OnClose when Esc is pressed and CloseOnEsc is true.
+// 4. Prevents background focus traversal through focus scope behavior.
+func Dialog(props DialogProps, child Node) Node {
+	return Component(func() Node {
+		return ViewWith(
+			ViewProps{
+				FocusScope: true,
+				Style: Style{
+					FlexGrow:   1,
+					Direction:  Column,
+					AlignItems: AlignCenter,
+					Justify:    JustifyCenter,
+					Background: props.BackdropStyle.Background,
+					Foreground: props.BackdropStyle.Foreground,
+				},
+				OnKey: func(ev KeyEvent) bool {
+					if props.CloseOnEsc && ev.Key == KeyEsc {
+						if props.OnClose != nil {
+							props.OnClose()
+						}
+						return true
+					}
+					return false
+				},
+			},
+			View(props.Style, child),
 		)
 	})
 }
@@ -404,24 +511,26 @@ func TextInput(props TextInputProps) Node {
 						if cursor == 0 {
 							return false
 						}
+						if props.OnChange == nil {
+							return false
+						}
 						nextRunes := make([]rune, 0, len(runes)-1)
 						nextRunes = append(nextRunes, runes[:cursor-1]...)
 						nextRunes = append(nextRunes, runes[cursor:]...)
-						if props.OnChange != nil {
-							props.OnChange(string(nextRunes))
-							setCursor(cursor - 1)
-						}
+						props.OnChange(string(nextRunes))
+						setCursor(cursor - 1)
 						return true
 					case KeyDelete:
 						if cursor >= len(runes) {
 							return false
 						}
+						if props.OnChange == nil {
+							return false
+						}
 						nextRunes := make([]rune, 0, len(runes)-1)
 						nextRunes = append(nextRunes, runes[:cursor]...)
 						nextRunes = append(nextRunes, runes[cursor+1:]...)
-						if props.OnChange != nil {
-							props.OnChange(string(nextRunes))
-						}
+						props.OnChange(string(nextRunes))
 						return true
 					case KeyEnter:
 						if props.OnSubmit == nil {
@@ -433,14 +542,15 @@ func TextInput(props TextInputProps) Node {
 						if ev.Rune == 0 {
 							return false
 						}
+						if props.OnChange == nil {
+							return false
+						}
 						nextRunes := make([]rune, 0, len(runes)+1)
 						nextRunes = append(nextRunes, runes[:cursor]...)
 						nextRunes = append(nextRunes, ev.Rune)
 						nextRunes = append(nextRunes, runes[cursor:]...)
-						if props.OnChange != nil {
-							props.OnChange(string(nextRunes))
-							setCursor(cursor + 1)
-						}
+						props.OnChange(string(nextRunes))
+						setCursor(cursor + 1)
 						return true
 					}
 					return false

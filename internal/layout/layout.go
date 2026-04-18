@@ -95,6 +95,29 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 		}}
 	}
 
+	// Overlay node.
+	if nd.Kind == node.OverlayKind {
+		result := Result{
+			Rect:    style.Rect{X: ox, Y: oy, W: c.MaxW, H: c.MaxH},
+			Content: style.Rect{X: ox, Y: oy, W: c.MaxW, H: c.MaxH},
+		}
+		tree := &Tree{Result: result}
+		if len(nd.Children) == 0 {
+			return tree
+		}
+		childC := Constraints{
+			MinW: result.Content.W,
+			MaxW: result.Content.W,
+			MinH: result.Content.H,
+			MaxH: result.Content.H,
+		}
+		tree.Children = make([]*Tree, len(nd.Children))
+		for i, child := range nd.Children {
+			tree.Children[i] = layoutNode(child, childC, result.Content.X, result.Content.Y)
+		}
+		return tree
+	}
+
 	// View node.
 	s := nd.Style
 
@@ -379,6 +402,17 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		}
 		if maxH > 0 && h > maxH {
 			h = maxH
+		}
+		return w, h
+	case node.OverlayKind:
+		for _, child := range nd.Children {
+			cw, ch := measureIntrinsic(child, maxW, maxH)
+			if cw > w {
+				w = cw
+			}
+			if ch > h {
+				h = ch
+			}
 		}
 		return w, h
 	case node.ComponentKind, node.KeyedKind:

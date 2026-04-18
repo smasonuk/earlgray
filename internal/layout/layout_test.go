@@ -344,3 +344,24 @@ func TestMeasureTextRespectMaxWidth(t *testing.T) {
 		t.Errorf("expected width 3, got %d", w)
 	}
 }
+
+func TestOverlayChildrenReceiveSameRect(t *testing.T) {
+	n := &node.Node{
+		Kind: node.OverlayKind,
+		Children: []*node.Node{
+			viewNode(style.Style{}),
+			viewNode(style.Style{}),
+		},
+	}
+	tree := Layout(n, exactC(80, 24))
+	if len(tree.Children) != 2 {
+		t.Fatalf("expected 2 children, got %d", len(tree.Children))
+	}
+	want := style.Rect{X: 0, Y: 0, W: 80, H: 24}
+	if tree.Children[0].Result.Rect != want {
+		t.Errorf("child 0 rect: got %+v, want %+v", tree.Children[0].Result.Rect, want)
+	}
+	if tree.Children[1].Result.Rect != want {
+		t.Errorf("child 1 rect: got %+v, want %+v", tree.Children[1].Result.Rect, want)
+	}
+}

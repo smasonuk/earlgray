@@ -40,6 +40,213 @@ func TestTextInputReturnsComponentNode(t *testing.T) {
 	}
 }
 
+func TestOverlayReturnsOverlayNode(t *testing.T) {
+	got := Overlay()
+	if got.Kind != inode.OverlayKind {
+		t.Fatalf("Overlay should return an OverlayKind node, got %v", got.Kind)
+	}
+}
+
+func TestDialogReturnsComponentNode(t *testing.T) {
+	got := Dialog(DialogProps{}, View(Style{}))
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("Dialog should return a ComponentKind node, got %v", got.Kind)
+	}
+}
+
+func TestDialogEscCallsOnCloseWhenEnabled(t *testing.T) {
+	called := false
+	rt := runtime.New()
+	root := Dialog(DialogProps{
+		CloseOnEsc: true,
+		OnClose:    func() { called = true },
+	}, View(Style{}))
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEsc}})
+	if !consumed {
+		t.Fatal("Esc should be consumed by Dialog")
+	}
+	if !called {
+		t.Fatal("OnClose should be called")
+	}
+}
+
+func TestDialogEscReturnsFalseWhenCloseDisabled(t *testing.T) {
+	called := false
+	rt := runtime.New()
+	root := Dialog(DialogProps{
+		CloseOnEsc: false,
+		OnClose:    func() { called = true },
+	}, View(Style{}))
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEsc}})
+	if consumed {
+		t.Fatal("Esc should NOT be consumed by Dialog when CloseOnEsc is false")
+	}
+	if called {
+		t.Fatal("OnClose should NOT be called")
+	}
+}
+
+func TestDialogTrapsFocusAwayFromBackground(t *testing.T) {
+	rt := runtime.New()
+
+	backgroundPressed := false
+	dialogPressed := false
+
+	root := Overlay(
+		Button(ButtonProps{
+			Label:   "Background",
+			OnPress: func() { backgroundPressed = true },
+		}),
+		Dialog(DialogProps{}, Button(ButtonProps{
+			Label:   "Dialog",
+			OnPress: func() { dialogPressed = true },
+		})),
+	)
+
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
+	updateUntilClean(rt, root)
+
+	if backgroundPressed {
+		t.Fatal("background button should not be pressed while dialog is active")
+	}
+	if !dialogPressed {
+		t.Fatal("dialog button should be focused and pressed")
+	}
+
+	dialogPressed = false
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyTab}})
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
+	updateUntilClean(rt, root)
+
+	if backgroundPressed {
+		t.Fatal("Tab should not escape dialog focus scope")
+	}
+	if !dialogPressed {
+		t.Fatal("dialog button should still be pressed after Tab")
+	}
+}
+
+func TestDialogRendersOverBackgroundInOverlay(t *testing.T) {
+	rt := runtime.New()
+	root := Overlay(
+		Text("BACKGROUND"),
+		Dialog(DialogProps{
+			Style: Style{Width: Cells(10), Height: Cells(1)},
+		}, Text("DIALOG")),
+	)
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Backdrop is full screen. Dialog is centered.
+	// In 80x24, free vertical space is 24-1=23, so y = 23/2 = 11.
+	// Free horizontal space is 80-10=70, so x = 70/2 = 35.
+	// DIALOG text starts at the left of its 10-cell container by default.
+	if got := buf.At(35, 11).Rune; got != 'D' {
+		t.Errorf("expected 'D' at (35,11), got %q", got)
+	}
+}
+
+func TestUseRouterInitialPath(t *testing.T) {
+	var router Router
+	comp := Component(func() Node {
+		router = UseRouter("home")
+		return View(Style{})
+	})
+	rt := runtime.New()
+	rt.Update(comp)
+	if router.Path != "home" {
+		t.Errorf("expected home, got %q", router.Path)
+	}
+	if router.CanBack {
+		t.Error("should not be able to go back from initial path")
+	}
+}
+
+func TestUseRouterPushChangesPath(t *testing.T) {
+	var router Router
+	comp := Component(func() Node {
+		router = UseRouter("home")
+		return View(Style{})
+	})
+	rt := runtime.New()
+	rt.Update(comp)
+
+	router.Push("settings")
+	rt.Update(comp)
+
+	if router.Path != "settings" {
+		t.Errorf("expected settings, got %q", router.Path)
+	}
+	if !router.CanBack {
+		t.Error("should be able to go back after push")
+	}
+}
+
+func TestUseRouterReplaceChangesCurrentPath(t *testing.T) {
+	var router Router
+	comp := Component(func() Node {
+		router = UseRouter("home")
+		return View(Style{})
+	})
+	rt := runtime.New()
+	rt.Update(comp)
+
+	router.Replace("settings")
+	rt.Update(comp)
+
+	if router.Path != "settings" {
+		t.Errorf("expected settings, got %q", router.Path)
+	}
+	if router.CanBack {
+		t.Error("should not be able to go back after replace on initial path")
+	}
+}
+
+func TestUseRouterBackReturnsToPreviousPath(t *testing.T) {
+	var router Router
+	comp := Component(func() Node {
+		router = UseRouter("home")
+		return View(Style{})
+	})
+	rt := runtime.New()
+	rt.Update(comp)
+
+	router.Push("settings")
+	rt.Update(comp)
+	router.Back()
+	rt.Update(comp)
+
+	if router.Path != "home" {
+		t.Errorf("expected home after back, got %q", router.Path)
+	}
+}
+
+func TestUseRouterBackAtRootReturnsFalse(t *testing.T) {
+	var router Router
+	comp := Component(func() Node {
+		router = UseRouter("home")
+		return View(Style{})
+	})
+	rt := runtime.New()
+	rt.Update(comp)
+
+	if router.Back() != false {
+		t.Error("Back() at root should return false")
+	}
+}
+
 func TestOverlayVisualStylePreservesLayout(t *testing.T) {
 	base := Style{
 		Width:  Cells(7),
@@ -511,6 +718,54 @@ func TestTextInputEnterWithoutOnSubmitReturnsFalse(t *testing.T) {
 
 	if consumed {
 		t.Fatal("Enter without OnSubmit should return false")
+	}
+}
+
+func TestTextInputRuneWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "hello"}))
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if consumed {
+		t.Fatal("Rune without OnChange should return false")
+	}
+}
+
+func TestTextInputBackspaceWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "hello"}))
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
+
+	if consumed {
+		t.Fatal("Backspace without OnChange should return false")
+	}
+}
+
+func TestTextInputDeleteWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "hello"}))
+	updateUntilClean(rt, root)
+	// Move cursor to start so Delete has something to delete
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDelete}})
+
+	if consumed {
+		t.Fatal("Delete without OnChange should return false")
+	}
+}
+
+func TestTextInputMovementWithoutOnChangeStillWorks(t *testing.T) {
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "hello"}))
+	updateUntilClean(rt, root)
+
+	// Move left
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
+	if !consumed {
+		t.Fatal("Left movement should be consumed even if OnChange is nil")
 	}
 }
 

@@ -131,7 +131,7 @@ func buildSyntheticNode(inst *Instance) *node.Node {
 			synth.Children = []*node.Node{buildSyntheticNode(inst.children[0])}
 		}
 		return synth
-	case node.ViewKind:
+	case node.ViewKind, node.OverlayKind:
 		synth := *inst.nd // copy value
 		synth.Children = make([]*node.Node, len(inst.children))
 		for i, child := range inst.children {
@@ -193,18 +193,22 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			Rune: ev.Key.Rune,
 			Mod:  normalizeMod(ev.Key.Mod),
 		}
+		root := activeFocusRoot(r.root)
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
 					return true
 				}
 			}
+			if inst == root {
+				break
+			}
 		}
 		return false
 	}
 
-	// No focused node: fall back to depth-first delivery.
-	return deliverKey(r.root, ev.Key)
+	// No focused node: fall back to depth-first delivery within the active focus scope.
+	return deliverKey(activeFocusRoot(r.root), ev.Key)
 }
 
 // deliverKey walks the instance tree depth-first (children before parent),
@@ -235,6 +239,28 @@ func collectFocusable(root *Instance) []*Instance {
 	return result
 }
 
+func activeFocusRoot(root *Instance) *Instance {
+	if root == nil {
+		return nil
+	}
+	if scoped := findTopmostFocusScope(root); scoped != nil {
+		return scoped
+	}
+	return root
+}
+
+func findTopmostFocusScope(inst *Instance) *Instance {
+	for i := len(inst.children) - 1; i >= 0; i-- {
+		if found := findTopmostFocusScope(inst.children[i]); found != nil {
+			return found
+		}
+	}
+	if inst.nd != nil && inst.nd.FocusScope {
+		return inst
+	}
+	return nil
+}
+
 func collectFocusableRec(inst *Instance, result *[]*Instance) {
 	if inst.nd != nil && inst.nd.Focusable && !inst.nd.Disabled {
 		*result = append(*result, inst)
@@ -249,7 +275,7 @@ func (r *Runtime) focusPrev() {
 	if r.root == nil {
 		return
 	}
-	focusable := collectFocusable(r.root)
+	focusable := collectFocusable(activeFocusRoot(r.root))
 	if len(focusable) == 0 {
 		r.focused = nil
 		return
@@ -273,7 +299,7 @@ func (r *Runtime) focusNext() {
 	if r.root == nil {
 		return
 	}
-	focusable := collectFocusable(r.root)
+	focusable := collectFocusable(activeFocusRoot(r.root))
 	if len(focusable) == 0 {
 		r.focused = nil
 		return
@@ -302,7 +328,7 @@ func (r *Runtime) ensureFocus() {
 		return
 	}
 	prev := r.focused
-	focusable := collectFocusable(r.root)
+	focusable := collectFocusable(activeFocusRoot(r.root))
 
 	if r.focused != nil {
 		for _, inst := range focusable {
@@ -310,7 +336,7 @@ func (r *Runtime) ensureFocus() {
 				return // still valid; no change
 			}
 		}
-		// Previously focused instance is gone.
+		// Previously focused instance is gone or now outside active scope.
 	}
 
 	if af := firstAutoFocus(focusable); af != nil {
@@ -492,6 +518,13 @@ func applyLayout(inst *Instance, t *layout.Tree) {
 func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, cursor *cursorState) {
 	r := inst.layout.Rect
 	content := inst.layout.Content
+
+	if inst.nd.Kind == node.OverlayKind {
+		for _, child := range inst.children {
+			renderInstance(child, buf, inherited, cursor)
+		}
+		return
+	}
 
 	if inst.nd.Kind == node.ViewKind {
 		s := style.Merge(inherited, inst.nd.Style)

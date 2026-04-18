@@ -14,6 +14,7 @@ const (
 	TextKind                  // a leaf node with text content
 	KeyedKind                 // wraps another node with an explicit key
 	ComponentKind             // a function component
+	OverlayKind               // stacks children on top of each other
 )
 
 // TextAlign controls text alignment within its container.
@@ -51,6 +52,9 @@ type Node struct {
 	Focusable bool         // whether this node can receive focus
 	AutoFocus bool         // request focus on initial mount if no other node is focused
 	Disabled  bool         // skip in focus traversal and key delivery
+
+	// FocusScope traps focus traversal within this view's subtree.
+	FocusScope bool
 
 	// Cursor request: if CursorVisible is true, the runtime will show the
 	// terminal cursor at (CursorX, CursorY) relative to the node's content rect.

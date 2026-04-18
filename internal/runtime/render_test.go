@@ -390,3 +390,26 @@ func TestRenderWideCharacterClipping(t *testing.T) {
 		t.Error("wide character should not be partially drawn at clip boundary")
 	}
 }
+
+func TestRenderOverlayDrawsLaterChildOnTop(t *testing.T) {
+	nd := &node.Node{
+		Kind: node.OverlayKind,
+		Children: []*node.Node{
+			{
+				Kind: node.ViewKind,
+				Style: style.Style{Width: style.Cells(1), Height: style.Cells(1)},
+				Children: []*node.Node{{Kind: node.TextKind, Text: "A"}},
+			},
+			{
+				Kind: node.ViewKind,
+				Style: style.Style{Width: style.Cells(1), Height: style.Cells(1)},
+				Children: []*node.Node{{Kind: node.TextKind, Text: "B"}},
+			},
+		},
+	}
+	buf := renderHelper(nd, 1, 1)
+
+	if got := buf.At(0, 0).Rune; got != 'B' {
+		t.Errorf("overlay cell (0,0): got %q, want 'B'", got)
+	}
+}
