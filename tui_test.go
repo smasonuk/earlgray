@@ -71,13 +71,11 @@ func TestTextInputTypingCallsOnChange(t *testing.T) {
 
 	rt := runtime.New()
 	inputNode := TextInput(props)
-	rt.Update(inputNode)
+	updateUntilClean(rt, inputNode)
 
 	rt.RunLayout(80, 24)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
-	if rt.IsDirty() {
-		rt.Update(inputNode)
-	}
+	updateUntilClean(rt, inputNode)
 
 	if got != "hellox" {
 		t.Errorf("typing 'x' should append, got %q want %q", got, "hellox")
@@ -95,13 +93,11 @@ func TestTextInputBackspaceRemovesOneRune(t *testing.T) {
 
 	rt := runtime.New()
 	inputNode := TextInput(props)
-	rt.Update(inputNode)
+	updateUntilClean(rt, inputNode)
 
 	rt.RunLayout(80, 24)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
-	if rt.IsDirty() {
-		rt.Update(inputNode)
-	}
+	updateUntilClean(rt, inputNode)
 
 	if got != "a" {
 		t.Errorf("backspace should remove one rune, got %q want %q", got, "a")
@@ -123,7 +119,7 @@ func TestTextInputBackspaceOnEmptyReturnsFalse(t *testing.T) {
 
 	rt := runtime.New()
 	inputNode := TextInput(props)
-	rt.Update(inputNode)
+	updateUntilClean(rt, inputNode)
 
 	rt.RunLayout(80, 24)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
@@ -143,11 +139,8 @@ func TestTextInputFocusedRequestsCursor(t *testing.T) {
 
 	rt := runtime.New()
 	inputNode := TextInput(props)
-	rt.Update(inputNode)
+	updateUntilClean(rt, inputNode)
 
-	if rt.IsDirty() {
-		rt.Update(inputNode)
-	}
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -171,10 +164,7 @@ func TestTextInputUnfocusedNoCursor(t *testing.T) {
 		TextInput(props),
 	)
 
-	rt.Update(wrapperNode)
-	if rt.IsDirty() {
-		rt.Update(wrapperNode)
-	}
+	updateUntilClean(rt, wrapperNode)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -197,10 +187,7 @@ func TestTextInputFocusedCursorSitsAfterValueForAutoWidth(t *testing.T) {
 	})
 	root := View(Style{Direction: Column}, inputNode)
 
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -234,10 +221,7 @@ func TestTextInputCursorUsesDisplayWidthForWideRunes(t *testing.T) {
 	})
 	root := View(Style{Direction: Column}, inputNode)
 
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -259,14 +243,9 @@ func TestTextInputLeftMovesCursorOneRune(t *testing.T) {
 		Value: "abc",
 		Style: Style{Border: BorderAll},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 
@@ -282,18 +261,11 @@ func TestTextInputRightMovesCursorOneRune(t *testing.T) {
 		Value: "abc",
 		Style: Style{Border: BorderAll},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 
@@ -309,14 +281,9 @@ func TestTextInputHomeMovesCursorToStart(t *testing.T) {
 		Value: "abc",
 		Style: Style{Border: BorderAll},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 
@@ -332,18 +299,11 @@ func TestTextInputEndMovesCursorToEnd(t *testing.T) {
 		Value: "abc",
 		Style: Style{Border: BorderAll},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnd}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 
@@ -356,10 +316,7 @@ func TestTextInputEndMovesCursorToEnd(t *testing.T) {
 func TestTextInputMovementAtEdgesReturnsFalse(t *testing.T) {
 	rt := runtime.New()
 	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "abc"}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	if consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}}); consumed {
 		t.Fatal("Right at end should return false")
 	}
@@ -367,9 +324,7 @@ func TestTextInputMovementAtEdgesReturnsFalse(t *testing.T) {
 		t.Fatal("End at end should return false")
 	}
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	if consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}}); consumed {
 		t.Fatal("Left at cursor 0 should return false")
 	}
@@ -387,14 +342,9 @@ func TestTextInputTypingInsertsAtCursor(t *testing.T) {
 			got = next
 		},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'b'}})
 
 	if got != "abc" {
@@ -411,14 +361,9 @@ func TestTextInputTypingWideRuneInsertsAtCursor(t *testing.T) {
 			got = next
 		},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: '界'}})
 
 	if got != "a界b" {
@@ -433,14 +378,9 @@ func TestTextInputBackspaceDeletesBeforeCursor(t *testing.T) {
 		Value:    "abc",
 		OnChange: func(next string) { got = next },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
 
 	if got != "ac" {
@@ -455,14 +395,9 @@ func TestTextInputBackspaceDeletesWideRuneBeforeCursor(t *testing.T) {
 		Value:    "a界b",
 		OnChange: func(next string) { got = next },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
 
 	if got != "ab" {
@@ -477,14 +412,9 @@ func TestTextInputDeleteRemovesRuneAtCursor(t *testing.T) {
 		Value:    "abc",
 		OnChange: func(next string) { got = next },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDelete}})
 
 	if got != "bc" {
@@ -499,18 +429,11 @@ func TestTextInputDeleteWideRuneAtCursor(t *testing.T) {
 		Value:    "a界b",
 		OnChange: func(next string) { got = next },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDelete}})
 
 	if got != "ab" {
@@ -525,10 +448,7 @@ func TestTextInputDeleteAtEndReturnsFalse(t *testing.T) {
 		Value:    "abc",
 		OnChange: func(next string) { called = true },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	if consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDelete}}); consumed {
 		t.Fatal("Delete at end should return false")
 	}
@@ -549,10 +469,7 @@ func TestTextInputPlaceholderCursorStartsAtContentStart(t *testing.T) {
 	})
 	root := View(Style{Direction: Column}, inputNode)
 
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -575,10 +492,7 @@ func TestTextInputEnterCallsOnSubmit(t *testing.T) {
 		Value:    "hello",
 		OnSubmit: func(s string) { submitted = s },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
 
 	if !consumed {
@@ -592,10 +506,7 @@ func TestTextInputEnterCallsOnSubmit(t *testing.T) {
 func TestTextInputEnterWithoutOnSubmitReturnsFalse(t *testing.T) {
 	rt := runtime.New()
 	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "hello"}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
 
 	if consumed {
@@ -611,10 +522,7 @@ func TestDisabledTextInputEnterDoesNotSubmit(t *testing.T) {
 		Disabled: true,
 		OnSubmit: func(s string) { called = true },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
 
 	if consumed || called {
@@ -630,10 +538,7 @@ func TestDisabledTextInputDoesNotCallOnChange(t *testing.T) {
 		Disabled: true,
 		OnChange: func(string) { called = true },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
 
 	if consumed || called {
@@ -647,10 +552,7 @@ func TestDisabledTextInputDoesNotRequestCursor(t *testing.T) {
 		Value:    "abc",
 		Disabled: true,
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 
@@ -668,10 +570,7 @@ func TestDisabledTextInputDoesNotCallOnSubmit(t *testing.T) {
 		Disabled: true,
 		OnSubmit: func(string) { called = true },
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
 
 	if consumed || called {
@@ -688,7 +587,7 @@ func TestDisabledButtonDoesNotCallOnPressOnEnter(t *testing.T) {
 		OnPress:  func() { called = true },
 	})
 	root := View(Style{}, btn)
-	rt.Update(root)
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
 	if consumed || called {
@@ -705,7 +604,7 @@ func TestDisabledButtonDoesNotCallOnPressOnSpace(t *testing.T) {
 		OnPress:  func() { called = true },
 	})
 	root := View(Style{}, btn)
-	rt.Update(root)
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: ' '}})
 	if consumed || called {
@@ -722,10 +621,7 @@ func TestDisabledButtonSkippedByFocusTraversal(t *testing.T) {
 		Button(ButtonProps{Label: "Disabled", Disabled: true, OnPress: func() { calledDisabled = true }}),
 		Button(ButtonProps{Label: "Enabled", OnPress: func() { calledEnabled = true }}),
 	)
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnter}})
 
@@ -747,10 +643,7 @@ func TestTextInputFixedWidthCursorScrollsAtEnd(t *testing.T) {
 			Border: BorderAll,
 		},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
 	rt.Render(buf)
@@ -773,10 +666,7 @@ func TestTextInputFixedWidthScrollDoesNotSplitWideRune(t *testing.T) {
 			Border: BorderAll,
 		},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
 	rt.Render(buf)
@@ -796,22 +686,13 @@ func TestTextInputFixedWidthCursorMovesBackIntoScrolledValue(t *testing.T) {
 			Border: BorderAll,
 		},
 	}))
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 
@@ -914,22 +795,15 @@ func TestTextInputControlledTypingUpdatesRenderedValue(t *testing.T) {
 	}
 
 	root := Component(form)
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	// Move cursor between 'a' and 'c'
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	// Type 'b'
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'b'}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -959,16 +833,11 @@ func TestTextInputControlledBackspaceUpdatesRenderedValue(t *testing.T) {
 	}
 
 	root := Component(form)
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	// Backspace at end
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -998,22 +867,15 @@ func TestTextInputControlledDeleteUpdatesRenderedValue(t *testing.T) {
 	}
 
 	root := Component(form)
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	// Move to start
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	// Delete 'a'
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDelete}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -1043,20 +905,13 @@ func TestTextInputControlledCursorSurvivesParentUpdate(t *testing.T) {
 	}
 
 	root := Component(form)
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	// Move cursor to index 1 (between 'a' and 'b')
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -1068,9 +923,7 @@ func TestTextInputControlledCursorSurvivesParentUpdate(t *testing.T) {
 
 	// Type 'X'
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'X'}})
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	rt.Render(buf)
@@ -1104,10 +957,7 @@ func TestTextInputFixedWidthPlaceholderCursorStartsAtContentStart(t *testing.T) 
 	})
 	root := View(Style{Direction: Column}, inputNode)
 
-	rt.Update(root)
-	if rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -1137,10 +987,7 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 	root := Component(form)
 
 	// Initial render to mount and focus
-	rt.Update(root)
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	if rt.Focused() == nil {
 		t.Fatal("Nothing focused")
@@ -1151,9 +998,7 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 	if !consumed {
 		t.Fatal("Home key not consumed")
 	}
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
@@ -1167,17 +1012,11 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 
 	// Move cursor to index 3
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
 	x, _, _ = rt.Cursor()
@@ -1188,9 +1027,7 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 	// Update external value
 	val = "new value" // length 9
 	rt.Update(root)
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
@@ -1206,9 +1043,7 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 	// Update external value to something shorter but still includes cursor
 	val = "short" // length 5
 	rt.Update(root)
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
@@ -1224,9 +1059,7 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 	// Update external value to something shorter than cursor
 	val = "ab" // length 2
 	rt.Update(root)
-	for rt.IsDirty() {
-		rt.Update(root)
-	}
+	updateUntilClean(rt, root)
 
 	rt.RunLayout(80, 24)
 	rt.Render(screen.NewBuffer(80, 24))
@@ -1237,5 +1070,11 @@ func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
 	// Should be clamped to 2
 	if x != 2 {
 		t.Fatalf("Cursor x should be clamped to 2, got %d", x)
+	}
+}
+
+func updateUntilClean(rt *runtime.Runtime, root Node) {
+	for rt.IsDirty() {
+		rt.Update(root)
 	}
 }
