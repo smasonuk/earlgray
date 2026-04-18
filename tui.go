@@ -164,6 +164,8 @@ type ButtonProps struct {
 	OnPress      func()
 	Style        Style
 	FocusedStyle Style
+	AutoFocus    bool
+	Disabled     bool
 }
 
 func overlayVisualStyle(base, focus Style) Style {
@@ -202,7 +204,9 @@ func Button(props ButtonProps) Node {
 		return ViewWith(
 			ViewProps{
 				Style:     style,
-				Focusable: true,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
 				OnKey: func(ev KeyEvent) bool {
 					if ev.Key == KeyEnter {
 						if props.OnPress != nil {
@@ -231,11 +235,15 @@ type TextInputProps struct {
 	Placeholder  string
 	Style        Style
 	FocusedStyle Style
+	AutoFocus    bool
+	Disabled     bool
 }
 
 // TextInput creates a focusable single-line text input.
 // It is a controlled component: pass the current value through Value and receive
 // edits through OnChange. The parent is responsible for updating state.
+// TextInput is single-line. Long values are clipped by the view bounds;
+// horizontal scrolling and cursor movement are not yet implemented.
 func TextInput(props TextInputProps) Node {
 	return Component(func() Node {
 		focused := UseFocused()
@@ -253,8 +261,13 @@ func TextInput(props TextInputProps) Node {
 		nd := ViewWith(
 			ViewProps{
 				Style:     s,
-				Focusable: true,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
 				OnKey: func(ev KeyEvent) bool {
+					if props.Disabled {
+						return false
+					}
 					switch ev.Key {
 					case KeyRune:
 						if ev.Rune == 0 {
@@ -280,7 +293,7 @@ func TextInput(props TextInputProps) Node {
 			Text(displayValue, WithTextStyle(Style{FlexGrow: 1})),
 		)
 
-		if focused {
+		if focused && !props.Disabled {
 			nd.CursorVisible = true
 			nd.CursorX = runewidth.StringWidth(props.Value)
 			nd.CursorY = 0

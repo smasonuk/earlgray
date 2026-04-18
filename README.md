@@ -118,6 +118,8 @@ Ctrl-C always exits, handled by `tui.Run`.
 tui.Button(tui.ButtonProps{
     Label:   "[ Click me ]",
     OnPress: func() { /* handle press */ },
+    AutoFocus: true,
+    Disabled: false,
     Style: tui.Style{
         Width:  tui.Cells(14),
         Height: tui.Cells(3),
@@ -128,6 +130,9 @@ tui.Button(tui.ButtonProps{
     },
 })
 ```
+
+- `AutoFocus: true` — button receives focus on initial mount if nothing else is focused.
+- `Disabled: true` — button cannot be focused or pressed.
 
 ## TextInput
 
@@ -141,6 +146,8 @@ tui.TextInput(tui.TextInputProps{
     Value:       name,
     OnChange:    setName,
     Placeholder: "Type your name...",
+    AutoFocus:   true,
+    Disabled:    false,
     Style: tui.Style{
         Width:  tui.Cells(30),
         Height: tui.Cells(3),
@@ -156,12 +163,14 @@ tui.TextInput(tui.TextInputProps{
 - Backspace removes the last rune.
 - Empty `Value` displays `Placeholder`.
 - When focused, the terminal cursor is shown at the end of the text.
+- `AutoFocus: true` — input receives focus on initial mount if nothing else is focused.
+- `Disabled: true` — input cannot be focused or edited; no cursor is shown.
 - `FocusedStyle` overlays visual properties only (foreground, background, bold,
   italic, underline). Layout fields (width, height, border, padding) are always
   taken from `Style`.
 
-Current limitations: single-line only. No cursor movement, selection,
-delete key, home/end, paste, or horizontal scrolling.
+Current limitations: single-line only. Long values are clipped by the view bounds.
+No cursor movement, selection, delete key, home/end, paste, or horizontal scrolling.
 
 ## Known limitations
 

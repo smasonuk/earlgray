@@ -586,6 +586,90 @@ func TestDisabledParentDoesNotDisableChild(t *testing.T) {
 	}
 }
 
+func TestDisabledParentOnKeySkippedDuringBubble(t *testing.T) {
+	rt := New()
+	parentHandled := false
+	childHandled := false
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(kp node.KeyPress) bool {
+			childHandled = true
+			return false // not consumed; let it bubble
+		},
+	}
+	parent := &node.Node{
+		Kind:     node.ViewKind,
+		Disabled: true, // disabled parent
+		Children: []*node.Node{child},
+		OnKey: func(kp node.KeyPress) bool {
+			parentHandled = true
+			return true
+		},
+	}
+	rt.Update(parent)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'x'}})
+	if !childHandled {
+		t.Error("focused child should have received the key")
+	}
+	if parentHandled {
+		t.Error("disabled parent's OnKey should not be called during bubbling")
+	}
+}
+
+func TestFallbackDeliverySkipsDisabledHandler(t *testing.T) {
+	rt := New()
+	disabledHandled := false
+	childHandled := false
+
+	child := &node.Node{
+		Kind:   node.ViewKind,
+		OnKey:  func(kp node.KeyPress) bool { childHandled = true; return true },
+	}
+	disabled := &node.Node{
+		Kind:     node.ViewKind,
+		Disabled: true,
+		Children: []*node.Node{child},
+		OnKey:    func(kp node.KeyPress) bool { disabledHandled = true; return true },
+	}
+	rt.Update(disabled)
+
+	// Clear focus to trigger fallback delivery.
+	rt.focused = nil
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'y'}})
+	if disabledHandled {
+		t.Error("disabled node's handler should not be called in fallback delivery")
+	}
+	if !childHandled {
+		t.Error("child of disabled parent should still be visited in fallback delivery")
+	}
+}
+
+func TestFallbackDeliveryStillVisitsChildOfDisabledParent(t *testing.T) {
+	rt := New()
+	childHandled := false
+
+	child := &node.Node{
+		Kind:  node.ViewKind,
+		OnKey: func(kp node.KeyPress) bool { childHandled = true; return true },
+	}
+	disabled := &node.Node{
+		Kind:     node.ViewKind,
+		Disabled: true,
+		Children: []*node.Node{child},
+	}
+	rt.Update(disabled)
+
+	// Clear focus to trigger fallback delivery.
+	rt.focused = nil
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'z'}})
+	if !childHandled {
+		t.Error("child of disabled parent should be visited even though parent is disabled")
+	}
+}
+
 func TestNormalizeModNone(t *testing.T) {
 	got := normalizeMod(0)
 	if got != 0 {

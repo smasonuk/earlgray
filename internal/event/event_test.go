@@ -127,3 +127,38 @@ func TestKeyIsCtrlCPlainCIsFalse(t *testing.T) {
 		t.Error("plain c should not be recognized as Ctrl-C")
 	}
 }
+
+func TestKeyIsTabPlainTab(t *testing.T) {
+	k := Key{Key: tcell.KeyTab}
+	if !k.IsTab() {
+		t.Error("KeyTab should be recognized as Tab")
+	}
+}
+
+func TestKeyIsTabWithShiftIsFalse(t *testing.T) {
+	k := Key{Key: tcell.KeyTab, Mod: tcell.ModShift}
+	if k.IsTab() {
+		t.Error("Shift+Tab should not be recognized as plain Tab")
+	}
+}
+
+func TestKeyIsShiftTabBacktab(t *testing.T) {
+	k := Key{Key: tcell.KeyBacktab}
+	if !k.IsShiftTab() {
+		t.Error("KeyBacktab should be recognized as Shift+Tab")
+	}
+}
+
+func TestKeyIsShiftTabTabWithShift(t *testing.T) {
+	k := Key{Key: tcell.KeyTab, Mod: tcell.ModShift}
+	if !k.IsShiftTab() {
+		t.Error("Tab with Shift modifier should be recognized as Shift+Tab")
+	}
+}
+
+func TestKeyIsShiftTabPlainTabIsFalse(t *testing.T) {
+	k := Key{Key: tcell.KeyTab}
+	if k.IsShiftTab() {
+		t.Error("plain Tab should not be recognized as Shift+Tab")
+	}
+}

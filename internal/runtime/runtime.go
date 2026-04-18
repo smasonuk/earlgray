@@ -145,10 +145,10 @@ func buildSyntheticNode(inst *Instance) *node.Node {
 
 // Render paints the instance tree into buf.
 func (r *Runtime) Render(buf *screen.Buffer) {
+	r.cursor = cursorState{}
 	if r.root == nil {
 		return
 	}
-	r.cursor = cursorState{}
 	renderInstance(r.root, buf, style.Style{}, &r.cursor)
 }
 
@@ -194,7 +194,7 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			Mod:  normalizeMod(ev.Key.Mod),
 		}
 		for inst := r.focused; inst != nil; inst = inst.parent {
-			if inst.nd != nil && inst.nd.OnKey != nil {
+			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
 					return true
 				}
@@ -210,13 +210,14 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 // deliverKey walks the instance tree depth-first (children before parent),
 // calling the first OnKey handler that consumes the event.
 // Used as fallback when nothing is focused.
+// Disabled nodes' handlers are skipped but their children are still visited.
 func deliverKey(inst *Instance, key event.Key) bool {
 	for _, child := range inst.children {
 		if deliverKey(child, key) {
 			return true
 		}
 	}
-	if inst.nd.OnKey != nil {
+	if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 		press := input.KeyPress{
 			Key:  event.NormalizeKey(key.Key, key.Rune),
 			Rune: key.Rune,
