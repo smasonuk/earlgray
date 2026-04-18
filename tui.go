@@ -332,8 +332,11 @@ func textInputVisibleValue(value string, cursorRuneIndex int, contentWidth int, 
 // TextInput creates a focusable single-line text input.
 // It is a controlled component: pass the current value through Value and receive
 // edits through OnChange. The parent is responsible for updating state.
-// TextInput is single-line. Long values are clipped by the view bounds;
-// horizontal scrolling and cursor movement are not yet implemented.
+//
+// TextInput is single-line. It supports cursor movement, insertion,
+// Backspace, Delete, and Enter submission. Fixed-width inputs scroll
+// horizontally to keep the cursor visible. Auto/flex-sized inputs still
+// rely on normal clipping behavior.
 func TextInput(props TextInputProps) Node {
 	return Component(func() Node {
 		focused := UseFocused()

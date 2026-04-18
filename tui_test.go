@@ -834,3 +834,418 @@ func TestTextInputFixedWidthCursorMovesBackIntoScrolledValue(t *testing.T) {
 		t.Fatalf("Cursor x %d is out of bounds [1, 4]", x)
 	}
 }
+
+func TestTextInputVisibleValueAtEnd(t *testing.T) {
+	visible, cursorX := textInputVisibleValue("abcdef", 6, 4, true)
+
+	if visible != "def " {
+		t.Fatalf("visible = %q, want %q", visible, "def ")
+	}
+	if cursorX != 3 {
+		t.Fatalf("cursorX = %d, want 3", cursorX)
+	}
+}
+
+func TestTextInputVisibleValueAtStart(t *testing.T) {
+	visible, cursorX := textInputVisibleValue("abcdef", 0, 4, true)
+
+	if visible != "abc " {
+		t.Fatalf("visible = %q, want %q", visible, "abc ")
+	}
+	if cursorX != 0 {
+		t.Fatalf("cursorX = %d, want 0", cursorX)
+	}
+}
+
+func TestTextInputVisibleValueInMiddle(t *testing.T) {
+	// Value "abcdef", cursor at 3 ('d'), content width 4.
+	// Space for 3 runes + 1 for cursor/padding.
+	visible, cursorX := textInputVisibleValue("abcdef", 3, 4, true)
+
+	// current implementation of textInputVisibleValue scrolls so that cursor is at the end of window if possible when moving right,
+	// but when at index 3, it should show runes around it.
+	// Let's check logic:
+	// maxWidth = 4 - 1 = 3
+	// start = 3. wBefore: 'c'(1) -> 1, 'b'(1) -> 2, 'a'(1) -> 3. start = 0.
+	// end = 3. wAfter: 'd'(1) + wBefore(3) > 3. end = 3.
+	// vis = "abc" + " "
+	// cursorX = width("abc") = 3.
+
+	if visible != "abc " {
+		t.Fatalf("visible = %q, want %q", visible, "abc ")
+	}
+	if cursorX != 3 {
+		t.Fatalf("cursorX = %d, want 3", cursorX)
+	}
+}
+
+func TestTextInputVisibleValueWithWideRuneBeforeCursor(t *testing.T) {
+	// "a界b", cursor at 2 ('b'), content width 4.
+	// maxWidth = 3.
+	// start = 2. wBefore: '界'(2) -> 2, 'a'(1) -> 3. start = 0.
+	// end = 2. wAfter: 'b'(1) + 3 > 3. end = 2.
+	// vis = "a界" + " "
+	// cursorX = width("a界") = 3.
+	visible, cursorX := textInputVisibleValue("a界b", 2, 4, true)
+
+	if visible != "a界 " {
+		t.Fatalf("visible = %q, want %q", visible, "a界 ")
+	}
+	if cursorX != 3 {
+		t.Fatalf("cursorX = %d, want 3", cursorX)
+	}
+}
+
+func TestTextInputVisibleValueWithWideRuneAtBoundary(t *testing.T) {
+	// "abc界", cursor at 4 (end), content width 4.
+	// maxWidth = 3.
+	// start = 4. wBefore: '界'(2) -> 2, 'c'(1) -> 3. start = 2.
+	// vis = "c界" + " "
+	// cursorX = width("c界") = 3.
+	visible, cursorX := textInputVisibleValue("abc界", 4, 4, true)
+
+	if visible != "c界 " {
+		t.Fatalf("visible = %q, want %q", visible, "c界 ")
+	}
+	if cursorX != 3 {
+		t.Fatalf("cursorX = %d, want 3", cursorX)
+	}
+}
+
+func TestTextInputControlledTypingUpdatesRenderedValue(t *testing.T) {
+	rt := runtime.New()
+	form := func() Node {
+		val, setVal := UseState("ac")
+		return TextInput(TextInputProps{
+			Value:    val,
+			OnChange: setVal,
+			Style:    Style{Border: BorderAll},
+		})
+	}
+
+	root := Component(form)
+	rt.Update(root)
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	// Move cursor between 'a' and 'c'
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	// Type 'b'
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'b'}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Result should be "abc"
+	if got := buf.At(1, 1).Rune; got != 'a' {
+		t.Errorf("at (1,1) got %q want 'a'", got)
+	}
+	if got := buf.At(2, 1).Rune; got != 'b' {
+		t.Errorf("at (2,1) got %q want 'b'", got)
+	}
+	if got := buf.At(3, 1).Rune; got != 'c' {
+		t.Errorf("at (3,1) got %q want 'c'", got)
+	}
+}
+
+func TestTextInputControlledBackspaceUpdatesRenderedValue(t *testing.T) {
+	rt := runtime.New()
+	form := func() Node {
+		val, setVal := UseState("abc")
+		return TextInput(TextInputProps{
+			Value:    val,
+			OnChange: setVal,
+			Style:    Style{Border: BorderAll},
+		})
+	}
+
+	root := Component(form)
+	rt.Update(root)
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	// Backspace at end
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyBackspace}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Result should be "ab"
+	if got := buf.At(1, 1).Rune; got != 'a' {
+		t.Errorf("at (1,1) got %q want 'a'", got)
+	}
+	if got := buf.At(2, 1).Rune; got != 'b' {
+		t.Errorf("at (2,1) got %q want 'b'", got)
+	}
+	if got := buf.At(3, 1).Rune; got != ' ' {
+		t.Errorf("at (3,1) got %q want ' '", got)
+	}
+}
+
+func TestTextInputControlledDeleteUpdatesRenderedValue(t *testing.T) {
+	rt := runtime.New()
+	form := func() Node {
+		val, setVal := UseState("abc")
+		return TextInput(TextInputProps{
+			Value:    val,
+			OnChange: setVal,
+			Style:    Style{Border: BorderAll},
+		})
+	}
+
+	root := Component(form)
+	rt.Update(root)
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	// Move to start
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	// Delete 'a'
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyDelete}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Result should be "bc"
+	if got := buf.At(1, 1).Rune; got != 'b' {
+		t.Errorf("at (1,1) got %q want 'b'", got)
+	}
+	if got := buf.At(2, 1).Rune; got != 'c' {
+		t.Errorf("at (2,1) got %q want 'c'", got)
+	}
+	if got := buf.At(3, 1).Rune; got != ' ' {
+		t.Errorf("at (3,1) got %q want ' '", got)
+	}
+}
+
+func TestTextInputControlledCursorSurvivesParentUpdate(t *testing.T) {
+	rt := runtime.New()
+	form := func() Node {
+		val, setVal := UseState("abc")
+		return TextInput(TextInputProps{
+			Value:    val,
+			OnChange: setVal,
+			Style:    Style{Border: BorderAll},
+		})
+	}
+
+	root := Component(form)
+	rt.Update(root)
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	// Move cursor to index 1 (between 'a' and 'b')
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	x, _, _ := rt.Cursor()
+	if x != 2 {
+		t.Fatalf("Initial cursor x should be 2, got %d", x)
+	}
+
+	// Type 'X'
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'X'}})
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	rt.Render(buf)
+	// Value is "aXbc", cursor should be at index 2 (after 'X'), so x=3
+	x, _, _ = rt.Cursor()
+	if x != 3 {
+		t.Fatalf("Cursor x after typing should be 3, got %d", x)
+	}
+
+	buf = screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	if got := buf.At(1, 1).Rune; got != 'a' {
+		t.Errorf("at (1,1) got %q want 'a'", got)
+	}
+	if got := buf.At(2, 1).Rune; got != 'X' {
+		t.Errorf("at (2,1) got %q want 'X'", got)
+	}
+}
+
+func TestTextInputFixedWidthPlaceholderCursorStartsAtContentStart(t *testing.T) {
+	rt := runtime.New()
+
+	inputNode := TextInput(TextInputProps{
+		Value:       "",
+		Placeholder: "Type here",
+		Style: Style{
+			Width:  Cells(8),
+			Height: Cells(3),
+			Border: BorderAll,
+		},
+	})
+	root := View(Style{Direction: Column}, inputNode)
+
+	rt.Update(root)
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	x, y, visible := rt.Cursor()
+	// Border is at x=0, so content starts at x=1.
+	if !visible || x != 1 || y != 1 {
+		t.Fatalf("Placeholder cursor expected visible=true x=1 y=1, got visible=%v x=%d y=%d", visible, x, y)
+	}
+
+	if got := buf.At(1, 1).Rune; got != 'T' {
+		t.Fatalf("placeholder should start at (1,1), got %q", got)
+	}
+}
+
+func TestTextInputExternalValueChangePreservesCursorWithinBounds(t *testing.T) {
+	rt := runtime.New()
+
+	val := "initial"
+	form := func() Node {
+		return TextInput(TextInputProps{
+			Value:     val,
+			AutoFocus: true,
+		})
+	}
+	root := Component(form)
+
+	// Initial render to mount and focus
+	rt.Update(root)
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	if rt.Focused() == nil {
+		t.Fatal("Nothing focused")
+	}
+
+	// Move cursor to start of "initial"
+	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyHome}})
+	if !consumed {
+		t.Fatal("Home key not consumed")
+	}
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	x, _, visible := rt.Cursor()
+	if !visible {
+		t.Fatal("Cursor not visible after move to Home")
+	}
+	if x != 0 {
+		t.Fatalf("Cursor x should be 0, got %d", x)
+	}
+
+	// Move cursor to index 3
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRight}})
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	x, _, _ = rt.Cursor()
+	if x != 3 {
+		t.Fatalf("Cursor x should be 3, got %d", x)
+	}
+
+	// Update external value
+	val = "new value" // length 9
+	rt.Update(root)
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	x, _, visible = rt.Cursor()
+	if !visible {
+		t.Fatal("Cursor not visible after external update")
+	}
+	// Current implementation preserves cursor (3)
+	if x != 3 {
+		t.Fatalf("Cursor x should still be 3, got %d", x)
+	}
+
+	// Update external value to something shorter but still includes cursor
+	val = "short" // length 5
+	rt.Update(root)
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	x, _, visible = rt.Cursor()
+	if !visible {
+		t.Fatal("Cursor not visible after external update to shorter value")
+	}
+	// Should still be at 3
+	if x != 3 {
+		t.Fatalf("Cursor x should still be 3, got %d", x)
+	}
+
+	// Update external value to something shorter than cursor
+	val = "ab" // length 2
+	rt.Update(root)
+	for rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	x, _, visible = rt.Cursor()
+	if !visible {
+		t.Fatal("Cursor not visible after external update to very short value")
+	}
+	// Should be clamped to 2
+	if x != 2 {
+		t.Fatalf("Cursor x should be clamped to 2, got %d", x)
+	}
+}
