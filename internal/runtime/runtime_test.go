@@ -928,6 +928,77 @@ func TestDuplicateKeysDoNotReuseSameInstanceTwice(t *testing.T) {
 	}
 }
 
+func TestFocusScopeRestoresPreviousFocusWhenClosed(t *testing.T) {
+	rt := New()
+
+	first := focusableND()
+	opener := focusableND()
+
+	rt.Update(viewND(first, opener))
+	rt.focused = rt.root.children[1] // opener
+
+	scopeChild := focusableND()
+	rt.Update(viewND(first, opener, focusScopeND(scopeChild)))
+
+	if rt.focused != rt.root.children[2].children[0] {
+		t.Fatal("focus should move into opened focus scope")
+	}
+
+	rt.Update(viewND(first, opener))
+
+	if rt.focused != rt.root.children[1] {
+		t.Fatal("focus should restore to previously focused opener")
+	}
+}
+
+func TestFocusScopeFallsBackWhenPreviousFocusRemoved(t *testing.T) {
+	rt := New()
+
+	first := focusableND()
+	opener := focusableND()
+
+	rt.Update(viewND(first, opener))
+	rt.focused = rt.root.children[1]
+
+	scopeChild := focusableND()
+	rt.Update(viewND(first, opener, focusScopeND(scopeChild)))
+
+	if rt.focused != rt.root.children[2].children[0] {
+		t.Fatal("focus should move into opened focus scope")
+	}
+
+	// Remove opener while closing the scope.
+	rt.Update(viewND(first))
+
+	if rt.focused != rt.root.children[0] {
+		t.Fatal("focus should fall back to first focusable when previous focus is gone")
+	}
+}
+
+func TestFocusScopeFallsBackWhenPreviousFocusDisabled(t *testing.T) {
+	rt := New()
+
+	first := focusableND()
+	opener := focusableND()
+
+	rt.Update(viewND(first, opener))
+	rt.focused = rt.root.children[1]
+
+	scopeChild := focusableND()
+	rt.Update(viewND(first, opener, focusScopeND(scopeChild)))
+
+	if rt.focused != rt.root.children[2].children[0] {
+		t.Fatal("focus should move into opened focus scope")
+	}
+
+	// Same position/kind, but opener is now disabled.
+	rt.Update(viewND(first, disabledFocusableND()))
+
+	if rt.focused != rt.root.children[0] {
+		t.Fatal("focus should fall back when previous focus is disabled")
+	}
+}
+
 func TestRunLayoutComponentRootFlexGrowParticipatesInParentLayout(t *testing.T) {
 	compFn := func() *node.Node {
 		return &node.Node{

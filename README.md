@@ -174,6 +174,32 @@ tui.TextInput(tui.TextInputProps{
 Current limitations: single-line only. Long values are clipped by the view bounds.
 No cursor movement, selection, delete key, home/end, paste, or horizontal scrolling.
 
+## Dialogs and focus scopes
+
+`Dialog` creates a full-screen focus scope. While the dialog is open, Tab and Shift+Tab cycle only through focusable controls inside the dialog. Background controls do not receive focus or key events.
+
+When the dialog closes, focus returns to the control that was focused before the dialog opened, if that control still exists and is enabled. Otherwise, focus falls back to the first available focusable control.
+
+Use `AutoFocus` on a control inside the dialog to choose the initial focused element.
+
+```go
+return tui.Overlay(
+    page,
+    tui.Dialog(tui.DialogProps{
+        CloseOnEsc: true,
+        OnClose: func() {
+            setOpen(false)
+        },
+    }, tui.TextInput(tui.TextInputProps{
+        Value:     value,
+        OnChange:  setValue,
+        AutoFocus: true,
+    })),
+)
+```
+
+See `examples/dialog` for a full working example with a `TextInput`, Submit, and Cancel buttons.
+
 ## Known limitations
 
 - Mouse input is not supported.

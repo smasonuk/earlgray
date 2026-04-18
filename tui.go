@@ -282,16 +282,11 @@ func Button(props ButtonProps) Node {
 				AutoFocus: props.AutoFocus,
 				Disabled:  props.Disabled,
 				OnKey: func(ev KeyEvent) bool {
-					if ev.Key == KeyEnter {
-						if props.OnPress != nil {
-							props.OnPress()
+					if ev.Key == KeyEnter || (ev.Key == KeyRune && ev.Rune == ' ') {
+						if props.OnPress == nil {
+							return false
 						}
-						return true
-					}
-					if ev.Key == KeyRune && ev.Rune == ' ' {
-						if props.OnPress != nil {
-							props.OnPress()
-						}
+						props.OnPress()
 						return true
 					}
 					return false

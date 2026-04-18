@@ -667,21 +667,14 @@ func TestTextPanelIntrinsicWordWrapHeight(t *testing.T) {
 		},
 	}
 
-	// Parent is Row, which allows child to choose its own width/height up to constraints.
-	// But TextPanel with WordWrap: true needs a width to wrap.
-	// In my implementation, it wraps to available width if it's smaller than max line width.
-	// Wait, how does it handle auto-width with word-wrap?
-	// Usually, if it's auto-width, it should probably use the max line width without wrapping.
-	// But if it has WordWrap enabled, it might wrap if constrained.
-	
-	// Let's see how Layout handles it.
+	// Auto-sized TextPanel measures wrapped visual lines using the available
+	// parent width. At width 10, "alpha beta gamma" wraps into:
+	//   "alpha beta"
+	//   "gamma"
 	parent := viewNode(style.Style{Direction: style.Row}, n)
 	tree := Layout(parent, exactC(10, 10))
 
 	got := tree.Children[0].Result.Rect
-	// "alpha beta gamma"
-	// At width 10: "alpha beta" (10), "gamma" (5)
-	// So Height should be 2.
 	if got.W != 10 || got.H != 2 {
 		t.Fatalf("TextPanel intrinsic rect = %+v, want 10x2", got)
 	}

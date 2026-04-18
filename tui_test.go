@@ -11,26 +11,63 @@ import (
 	"github.com/smason/earlgray/internal/screen"
 )
 
-func TestOverlayVisualStyleIgnoresFocusLayout(t *testing.T) {
+func TestOverlayVisualStyleAppliesOnlyVisualFields(t *testing.T) {
 	base := Style{
-		Width:  Cells(7),
-		Height: Cells(3),
-		Border: BorderAll,
+		Width:   Cells(7),
+		Height:  Cells(3),
+		Border:  BorderAll,
+		Padding: All(1),
+		Gap:     2,
 	}
 	focus := Style{
 		Width:      Cells(99),
 		Height:     Cells(99),
 		Border:     BorderNone,
+		Padding:    All(9),
+		Gap:        9,
+		FlexGrow:   99,
 		Foreground: ANSIColor(3),
+		Background: ANSIColor(4),
+		Bold:       true,
+		Italic:     true,
+		Underline:  true,
 	}
 
 	got := overlayVisualStyle(base, focus)
 
-	if got.Width != base.Width || got.Height != base.Height || got.Border != base.Border {
-		t.Fatal("focused visual style should not override layout")
+	if got.Width != base.Width {
+		t.Fatal("focused visual style should not override width")
 	}
+	if got.Height != base.Height {
+		t.Fatal("focused visual style should not override height")
+	}
+	if got.Border != base.Border {
+		t.Fatal("focused visual style should not override border")
+	}
+	if got.Padding != base.Padding {
+		t.Fatal("focused visual style should not override padding")
+	}
+	if got.Gap != base.Gap {
+		t.Fatal("focused visual style should not override gap")
+	}
+	if got.FlexGrow != base.FlexGrow {
+		t.Fatal("focused visual style should not override flex grow")
+	}
+
 	if got.Foreground != focus.Foreground {
 		t.Fatal("focused visual style should apply foreground")
+	}
+	if got.Background != focus.Background {
+		t.Fatal("focused visual style should apply background")
+	}
+	if !got.Bold {
+		t.Fatal("focused visual style should apply bold")
+	}
+	if !got.Italic {
+		t.Fatal("focused visual style should apply italic")
+	}
+	if !got.Underline {
+		t.Fatal("focused visual style should apply underline")
 	}
 }
 
@@ -245,26 +282,6 @@ func TestUseRouterBackAtRootReturnsFalse(t *testing.T) {
 
 	if router.Back() != false {
 		t.Error("Back() at root should return false")
-	}
-}
-
-func TestOverlayVisualStylePreservesLayout(t *testing.T) {
-	base := Style{
-		Width:  Cells(7),
-		Height: Cells(3),
-		Border: BorderAll,
-	}
-	focus := Style{
-		Foreground: ANSIColor(3),
-	}
-
-	got := overlayVisualStyle(base, focus)
-
-	if got.Width != base.Width || got.Height != base.Height || got.Border != base.Border {
-		t.Fatal("focused visual style should preserve base layout")
-	}
-	if got.Foreground != focus.Foreground {
-		t.Fatal("focused visual style should apply foreground")
 	}
 }
 
@@ -863,6 +880,69 @@ func TestDisabledButtonDoesNotCallOnPressOnSpace(t *testing.T) {
 	consumed := rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: ' '}})
 	if consumed || called {
 		t.Fatal("Disabled Button should not consume Space or press")
+	}
+}
+
+func TestButtonEnterWithoutOnPressReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := Button(ButtonProps{
+		Label:     "Button",
+		AutoFocus: true,
+	})
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnter},
+	})
+	if consumed {
+		t.Fatal("Button without OnPress should not consume Enter")
+	}
+}
+
+func TestButtonSpaceWithoutOnPressReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := Button(ButtonProps{
+		Label:     "Button",
+		AutoFocus: true,
+	})
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRune, Rune: ' '},
+	})
+	if consumed {
+		t.Fatal("Button without OnPress should not consume Space")
+	}
+}
+
+func TestButtonWithoutOnPressAllowsParentToHandleEnter(t *testing.T) {
+	rt := runtime.New()
+	parentHandled := false
+	root := ViewWith(
+		ViewProps{
+			OnKey: func(ev KeyEvent) bool {
+				if ev.Key == KeyEnter {
+					parentHandled = true
+					return true
+				}
+				return false
+			},
+		},
+		Button(ButtonProps{
+			Label:     "Button",
+			AutoFocus: true,
+		}),
+	)
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnter},
+	})
+	if !consumed {
+		t.Fatal("parent should consume Enter")
+	}
+	if !parentHandled {
+		t.Fatal("Button without OnPress should allow Enter to bubble to parent")
 	}
 }
 

@@ -67,6 +67,10 @@ type Runtime struct {
 	nextID  uintptr     // incremented on each mount to assign stable IDs
 	focused *Instance   // currently focused instance (Focusable node), or nil
 	cursor  cursorState // cursor position requested during the last Render
+
+	activeScope      *Instance // the focus scope active as of the last ensureFocus call
+	focusBeforeScope *Instance // focused instance recorded when the single active scope opened;
+	// only handles one level of nesting — a stack would be needed for nested scopes
 }
 
 // New creates a new Runtime.
@@ -333,16 +337,46 @@ func (r *Runtime) focusNext() {
 	r.focused = focusable[0]
 }
 
-// ensureFocus is called after each Update. If the focused instance was removed
-// from the tree it moves focus to the first available focusable node. If
-// nothing was focused and focusable nodes exist, it focuses the first one.
+// ensureFocus is called after each Update. Handles focus-scope transitions,
+// stale focused instances, and initial focus assignment.
 // Sets dirty if focus changed so the app can re-render to reflect focus state.
 func (r *Runtime) ensureFocus() {
 	if r.root == nil {
 		r.focused = nil
+		r.activeScope = nil
+		r.focusBeforeScope = nil
 		return
 	}
+
 	prev := r.focused
+	currentScope := findTopmostFocusScope(r.root)
+
+	if currentScope != r.activeScope {
+		switch {
+		case currentScope != nil && r.activeScope == nil:
+			// no scope → scope: record what was focused before entering
+			r.focusBeforeScope = r.focused
+		case currentScope == nil && r.activeScope != nil:
+			// scope → no scope: try to restore prior focus
+			if r.focusBeforeScope != nil {
+				allFocusable := collectFocusable(r.root)
+				for _, inst := range allFocusable {
+					if inst == r.focusBeforeScope {
+						r.focused = r.focusBeforeScope
+						r.focusBeforeScope = nil
+						r.activeScope = currentScope
+						if r.focused != prev {
+							r.dirty = true
+						}
+						return
+					}
+				}
+			}
+			r.focusBeforeScope = nil
+		}
+		r.activeScope = currentScope
+	}
+
 	focusable := collectFocusable(activeFocusRoot(r.root))
 
 	if r.focused != nil {
