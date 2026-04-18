@@ -24,19 +24,31 @@ const (
 	TextAlignRight
 )
 
+// KeyPress holds data delivered to an OnKey handler.
+type KeyPress struct {
+	Rune rune
+	Mod  int // modifier bitmask (matches tcell.ModMask)
+}
+
+// KeyHandler processes a key press. Returns true if the event was consumed.
+type KeyHandler func(KeyPress) bool
+
 // TextOptions holds options for text nodes.
 type TextOptions struct {
 	Align TextAlign
+	Style style.Style
 }
 
 // Node is the internal concrete node type.
 type Node struct {
-	Kind     Kind
-	Key      string       // optional explicit key for reconciliation
-	Style    style.Style  // style (ViewKind)
-	Children []*Node      // child nodes (ViewKind)
-	Text     string       // text content (TextKind)
-	TextOpts TextOptions  // text options (TextKind)
-	CompFn   func() *Node // component render function (ComponentKind)
-	CompID   uintptr      // identity of component function (for reconciliation)
+	Kind      Kind
+	Key       string       // optional explicit key for reconciliation
+	Style     style.Style  // style (ViewKind)
+	Children  []*Node      // child nodes (ViewKind, KeyedKind)
+	Text      string       // text content (TextKind)
+	TextOpts  TextOptions  // text options (TextKind)
+	CompFn    func() *Node // component render function (ComponentKind)
+	CompID    uintptr      // identity of component function (for reconciliation)
+	OnKey     KeyHandler   // optional key handler (ViewKind)
+	Focusable bool         // whether this node can receive focus
 }

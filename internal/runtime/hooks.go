@@ -4,6 +4,26 @@ package runtime
 // This is safe because rendering is single-threaded.
 var renderingInstance *Instance
 
+// IsFocused reports whether any immediate child of the rendering component
+// instance is the currently focused node. Call this from a component function
+// to know whether to render in a focused visual state.
+func IsFocused() bool {
+	inst := renderingInstance
+	if inst == nil {
+		return false
+	}
+	rt := inst.runtime
+	if rt == nil || rt.focused == nil {
+		return false
+	}
+	for _, child := range inst.children {
+		if child == rt.focused {
+			return true
+		}
+	}
+	return false
+}
+
 // UseState implements React-like state hooks.
 // T must match the type used when the hook slot was first initialized.
 func UseState[T any](initial T) (T, func(T)) {
@@ -22,14 +42,8 @@ func UseState[T any](initial T) (T, func(T)) {
 
 	setter := func(v T) {
 		inst.hookSlots[idx] = v
-		if globalRuntime != nil {
-			globalRuntime.MarkDirty()
-		}
+		inst.runtime.MarkDirty()
 	}
 
 	return val, setter
 }
-
-// globalRuntime holds the running Runtime so UseState can trigger redraws.
-// Set by Runtime.Run.
-var globalRuntime *Runtime

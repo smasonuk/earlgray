@@ -21,6 +21,11 @@ type Key struct {
 	Mod  tcell.ModMask // modifier keys
 }
 
+// IsTab reports whether this key event is a Tab key press.
+func (k Key) IsTab() bool {
+	return k.Key == tcell.KeyTab
+}
+
 // Event is a unified internal event.
 type Event struct {
 	Kind   Kind

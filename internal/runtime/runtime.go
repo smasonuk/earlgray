@@ -2,6 +2,9 @@
 package runtime
 
 import (
+	"strings"
+
+	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/event"
 	"github.com/smason/earlgray/internal/layout"
 	"github.com/smason/earlgray/internal/node"
@@ -12,6 +15,11 @@ import (
 // Instance is a retained node in the component tree.
 // It persists across renders to allow state to be preserved.
 type Instance struct {
+	id      uintptr   // stable identity; set on mount, preserved on reconcile
+	parent  *Instance // parent in the instance tree; nil for root
+
+	runtime *Runtime // owning runtime; used by UseState setters
+
 	// Descriptor of this node as of the last render.
 	nd   *node.Node
 	kind node.Kind // cached for quick comparison
@@ -25,7 +33,7 @@ type Instance struct {
 	// Layout result from the most recent layout pass.
 	layout layout.Result
 
-	// Hook slots for UseState (index by hook call order).
+	// Hook slots for UseState (indexed by hook call order).
 	hookSlots []any
 	hookIdx   int // reset to 0 at the start of each render
 
@@ -40,13 +48,14 @@ type Instance struct {
 type Runtime struct {
 	root  *Instance
 	dirty bool
+
+	nextID  uintptr   // incremented on each mount to assign stable IDs
+	focused *Instance // currently focused instance (Focusable node), or nil
 }
 
 // New creates a new Runtime.
 func New() *Runtime {
-	rt := &Runtime{dirty: true}
-	globalRuntime = rt
-	return rt
+	return &Runtime{dirty: true}
 }
 
 // MarkDirty schedules a re-render.
@@ -62,11 +71,17 @@ func (r *Runtime) IsDirty() bool {
 // Update reconciles the existing instance tree against a new node tree.
 func (r *Runtime) Update(n *node.Node) {
 	if r.root == nil {
-		r.root = mount(n)
+		r.root = mount(r, nil, n)
 	} else {
-		reconcile(r.root, n)
+		r.root = reconcile(r, nil, r.root, n)
 	}
 	r.dirty = false
+	r.ensureFocus()
+}
+
+// Focused returns the currently focused instance, or nil.
+func (r *Runtime) Focused() *Instance {
+	return r.focused
 }
 
 // RunLayout computes layout for the current instance tree.
@@ -123,77 +138,191 @@ func (r *Runtime) Render(buf *screen.Buffer) {
 // HandleEvent delivers a keyboard event to the runtime.
 // Returns true if the event was consumed.
 func (r *Runtime) HandleEvent(ev event.Event) bool {
-	// Future: deliver to focused component.
-	_ = ev
+	if ev.Kind != event.KeyKind || r.root == nil {
+		return false
+	}
+
+	// Tab moves focus forward through focusable nodes.
+	if ev.Key.IsTab() {
+		r.focusNext()
+		r.MarkDirty()
+		return true
+	}
+
+	// Deliver to focused node, then bubble up the parent chain.
+	if r.focused != nil {
+		press := node.KeyPress{Rune: ev.Key.Rune, Mod: int(ev.Key.Mod)}
+		for inst := r.focused; inst != nil; inst = inst.parent {
+			if inst.nd != nil && inst.nd.OnKey != nil {
+				if inst.nd.OnKey(press) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+
+	// No focused node: fall back to depth-first delivery.
+	return deliverKey(r.root, ev.Key)
+}
+
+// deliverKey walks the instance tree depth-first (children before parent),
+// calling the first OnKey handler that consumes the event.
+// Used as fallback when nothing is focused.
+func deliverKey(inst *Instance, key event.Key) bool {
+	for _, child := range inst.children {
+		if deliverKey(child, key) {
+			return true
+		}
+	}
+	if inst.nd.OnKey != nil {
+		return inst.nd.OnKey(node.KeyPress{Rune: key.Rune, Mod: int(key.Mod)})
+	}
 	return false
 }
 
+// collectFocusable returns all focusable instances in depth-first order.
+func collectFocusable(root *Instance) []*Instance {
+	var result []*Instance
+	collectFocusableRec(root, &result)
+	return result
+}
+
+func collectFocusableRec(inst *Instance, result *[]*Instance) {
+	if inst.nd != nil && inst.nd.Focusable {
+		*result = append(*result, inst)
+	}
+	for _, child := range inst.children {
+		collectFocusableRec(child, result)
+	}
+}
+
+// focusNext advances focus to the next focusable node, wrapping around.
+func (r *Runtime) focusNext() {
+	if r.root == nil {
+		return
+	}
+	focusable := collectFocusable(r.root)
+	if len(focusable) == 0 {
+		r.focused = nil
+		return
+	}
+	if r.focused == nil {
+		r.focused = focusable[0]
+		return
+	}
+	for i, inst := range focusable {
+		if inst == r.focused {
+			r.focused = focusable[(i+1)%len(focusable)]
+			return
+		}
+	}
+	// Focused instance no longer in tree; reset to first.
+	r.focused = focusable[0]
+}
+
+// ensureFocus is called after each Update. If the focused instance was removed
+// from the tree it moves focus to the first available focusable node. If
+// nothing was focused and focusable nodes exist, it focuses the first one.
+// Sets dirty if focus changed so the app can re-render to reflect focus state.
+func (r *Runtime) ensureFocus() {
+	if r.root == nil {
+		r.focused = nil
+		return
+	}
+	prev := r.focused
+	focusable := collectFocusable(r.root)
+
+	if r.focused != nil {
+		for _, inst := range focusable {
+			if inst == r.focused {
+				return // still valid; no change
+			}
+		}
+		// Previously focused instance is gone.
+	}
+
+	if len(focusable) > 0 {
+		r.focused = focusable[0]
+	} else {
+		r.focused = nil
+	}
+	if r.focused != prev {
+		r.dirty = true
+	}
+}
+
 // mount creates a fresh Instance tree for the given node.
-func mount(n *node.Node) *Instance {
+func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
+	rt.nextID++
 	inst := &Instance{
-		nd:   n,
-		kind: n.Kind,
-		key:  n.Key,
+		id:      rt.nextID,
+		parent:  parent,
+		runtime: rt,
+		nd:      n,
+		kind:    n.Kind,
+		key:     n.Key,
 	}
 
 	// For component nodes, render the component and mount its output.
 	if n.Kind == node.ComponentKind {
 		inst.compID = n.CompID
 		child := renderComponent(inst, n)
-		inst.children = []*Instance{mount(child)}
+		inst.children = []*Instance{mount(rt, inst, child)}
 		return inst
 	}
 
 	// For keyed nodes, just wrap the child.
 	if n.Kind == node.KeyedKind && len(n.Children) == 1 {
-		inst.children = []*Instance{mount(n.Children[0])}
+		inst.children = []*Instance{mount(rt, inst, n.Children[0])}
 		return inst
 	}
 
 	// View or Text: mount children.
 	inst.children = make([]*Instance, len(n.Children))
 	for i, child := range n.Children {
-		inst.children[i] = mount(child)
+		inst.children[i] = mount(rt, inst, child)
 	}
 	return inst
 }
 
 // reconcile updates an existing instance to match a new node descriptor.
-func reconcile(inst *Instance, n *node.Node) {
-	inst.nd = n
+// Returns the instance to use — either inst (updated in place) or a fresh mount.
+// parent is the parent of inst in the new tree (may be nil for root).
+func reconcile(rt *Runtime, parent *Instance, inst *Instance, n *node.Node) *Instance {
+	if !sameKind(inst, n) {
+		return mount(rt, parent, n)
+	}
 
-	// Component: re-render.
-	if n.Kind == node.ComponentKind {
-		if inst.compID != n.CompID {
-			// Different component function — remount.
-			*inst = *mount(n)
-			return
-		}
+	inst.nd = n
+	inst.kind = n.Kind
+	inst.key = n.Key
+
+	switch n.Kind {
+	case node.ComponentKind:
 		child := renderComponent(inst, n)
 		if len(inst.children) == 0 {
-			inst.children = []*Instance{mount(child)}
+			inst.children = []*Instance{mount(rt, inst, child)}
 		} else {
-			reconcile(inst.children[0], child)
+			inst.children[0] = reconcile(rt, inst, inst.children[0], child)
 		}
-		return
+	case node.KeyedKind:
+		if len(n.Children) == 1 {
+			if len(inst.children) == 0 {
+				inst.children = []*Instance{mount(rt, inst, n.Children[0])}
+			} else {
+				inst.children[0] = reconcile(rt, inst, inst.children[0], n.Children[0])
+			}
+		}
+	default:
+		reconcileChildren(rt, inst, n.Children)
 	}
 
-	// Keyed node.
-	if n.Kind == node.KeyedKind && len(n.Children) == 1 {
-		if len(inst.children) == 0 {
-			inst.children = []*Instance{mount(n.Children[0])}
-		} else {
-			reconcile(inst.children[0], n.Children[0])
-		}
-		return
-	}
-
-	// View/Text: reconcile children by key then position.
-	reconcileChildren(inst, n.Children)
+	return inst
 }
 
 // reconcileChildren matches new children to existing instances by key+position.
-func reconcileChildren(inst *Instance, newChildren []*node.Node) {
+func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 	old := inst.children
 
 	// Build a map of keyed old instances.
@@ -224,10 +353,9 @@ func reconcileChildren(inst *Instance, newChildren []*node.Node) {
 		}
 
 		if matched != nil {
-			reconcile(matched, nc)
-			next[i] = matched
+			next[i] = reconcile(rt, inst, matched, nc)
 		} else {
-			next[i] = mount(nc)
+			next[i] = mount(rt, inst, nc)
 		}
 	}
 
@@ -285,16 +413,12 @@ func renderInstance(inst *Instance, buf *screen.Buffer) {
 	if inst.nd.Kind == node.ViewKind {
 		s := inst.nd.Style
 
-		// Fill background.
-		if s.Background.Kind != 0 || true { // always fill for clipping
-			fillStyle := screen.CellStyle{
-				Fg: s.Foreground,
-				Bg: s.Background,
-			}
-			buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
+		fillStyle := screen.CellStyle{
+			Fg: s.Foreground,
+			Bg: s.Background,
 		}
+		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
 
-		// Draw borders using box-drawing characters.
 		borderStyle := screen.CellStyle{
 			Fg:   s.Foreground,
 			Bg:   s.Background,
@@ -302,7 +426,6 @@ func renderInstance(inst *Instance, buf *screen.Buffer) {
 		}
 		drawBorders(buf, r, s.Border, borderStyle)
 
-		// Recurse into children.
 		for _, child := range inst.children {
 			renderInstance(child, buf)
 		}
@@ -310,7 +433,8 @@ func renderInstance(inst *Instance, buf *screen.Buffer) {
 	}
 
 	if inst.nd.Kind == node.TextKind {
-		s := inst.nd.Style
+		opts := inst.nd.TextOpts
+		s := opts.Style
 		textStyle := screen.CellStyle{
 			Fg:        s.Foreground,
 			Bg:        s.Background,
@@ -318,18 +442,42 @@ func renderInstance(inst *Instance, buf *screen.Buffer) {
 			Italic:    s.Italic,
 			Underline: s.Underline,
 		}
-		buf.DrawTextClipped(
-			content.X, content.Y,
-			inst.nd.Text,
-			textStyle,
-			content.X, content.Y, content.W, content.H,
-		)
+		drawMultilineText(buf, content, inst.nd.Text, textStyle, opts.Align)
 		return
 	}
 
 	// Component or Keyed: render children.
 	for _, child := range inst.children {
 		renderInstance(child, buf)
+	}
+}
+
+// alignedX computes the starting x for a single line of text given alignment.
+func alignedX(rect style.Rect, line string, align node.TextAlign) int {
+	width := runewidth.StringWidth(line)
+	if width > rect.W {
+		width = rect.W
+	}
+	switch align {
+	case node.TextAlignCenter:
+		return rect.X + (rect.W-width)/2
+	case node.TextAlignRight:
+		return rect.X + rect.W - width
+	default:
+		return rect.X
+	}
+}
+
+// drawMultilineText renders text split by newlines with alignment support.
+func drawMultilineText(buf *screen.Buffer, rect style.Rect, text string, st screen.CellStyle, align node.TextAlign) {
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		if i >= rect.H {
+			break
+		}
+		x := alignedX(rect, line, align)
+		y := rect.Y + i
+		buf.DrawTextClipped(x, y, line, st, rect.X, rect.Y, rect.W, rect.H)
 	}
 }
 
@@ -349,10 +497,6 @@ func drawBorders(buf *screen.Buffer, r style.Rect, b style.Border, s screen.Cell
 		trCorner   = '┐' // U+2510
 		blCorner   = '└' // U+2514
 		brCorner   = '┘' // U+2518
-		tConnector = '┬' // T-junctions for partial borders
-		bConnector = '┴'
-		lConnector = '├'
-		rConnector = '┤'
 	)
 
 	if b.Top {
@@ -381,9 +525,4 @@ func drawBorders(buf *screen.Buffer, r style.Rect, b style.Border, s screen.Cell
 	if b.Bottom && b.Right {
 		buf.SetCell(r.X+r.W-1, r.Y+r.H-1, brCorner, s)
 	}
-
-	_ = tConnector
-	_ = bConnector
-	_ = lConnector
-	_ = rConnector
 }

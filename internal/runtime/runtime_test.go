@@ -3,6 +3,7 @@ package runtime
 import (
 	"testing"
 
+	"github.com/smason/earlgray/internal/event"
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/style"
 )
@@ -153,6 +154,161 @@ func TestUseStatePreserved(t *testing.T) {
 
 	if count != 42 {
 		t.Errorf("after setState count: %d, want 42", count)
+	}
+}
+
+func focusableND(children ...*node.Node) *node.Node {
+	return &node.Node{Kind: node.ViewKind, Focusable: true, Children: children}
+}
+
+func TestInstanceHasStableID(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(textND("a")))
+	id1 := rt.root.id
+	if id1 == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+	rt.Update(viewND(textND("b")))
+	if rt.root.id != id1 {
+		t.Error("reconciled instance should keep its ID")
+	}
+}
+
+func TestRemountGetsNewID(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(textND("a")))
+	id1 := rt.root.id
+
+	rt.Update(textND("b")) // kind change forces remount
+	id2 := rt.root.id
+	if id2 == id1 {
+		t.Error("remounted instance should get a new ID")
+	}
+}
+
+func TestParentPointers(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(viewND(textND("leaf"))))
+	root := rt.root
+	child := root.children[0]
+	leaf := child.children[0]
+
+	if child.parent != root {
+		t.Error("child.parent should point to root")
+	}
+	if leaf.parent != child {
+		t.Error("leaf.parent should point to child")
+	}
+	if root.parent != nil {
+		t.Error("root.parent should be nil")
+	}
+}
+
+func TestFocusFirstFocusableOnMount(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	if rt.focused == nil {
+		t.Fatal("expected focus to be set after mount")
+	}
+	if rt.focused != rt.root.children[0] {
+		t.Error("expected first focusable child to be focused")
+	}
+}
+
+func TestFocusNextCycles(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	first := rt.focused
+
+	rt.focusNext()
+	second := rt.focused
+	if second == first {
+		t.Error("focusNext should move to second focusable")
+	}
+
+	rt.focusNext()
+	if rt.focused != first {
+		t.Error("focusNext should wrap back to first focusable")
+	}
+}
+
+func TestFocusSurvivesReconcile(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND()))
+	focused := rt.focused
+
+	rt.Update(viewND(focusableND(textND("new child"))))
+	if rt.focused != focused {
+		t.Error("focus should survive reconcile of the same focusable instance")
+	}
+}
+
+func TestFocusMovesWhenFocusedNodeRemoved(t *testing.T) {
+	rt := New()
+	rt.Update(viewND(focusableND(), focusableND()))
+	rt.focused = rt.root.children[0] // focus first
+
+	// Remove both focusable children.
+	rt.Update(viewND())
+	if rt.focused != nil {
+		t.Error("focus should be nil when all focusable nodes removed")
+	}
+}
+
+func TestKeyDeliveredToFocused(t *testing.T) {
+	rt := New()
+	received := false
+	handler := func(kp node.KeyPress) bool {
+		if kp.Rune == 'x' {
+			received = true
+			return true
+		}
+		return false
+	}
+	rt.Update(viewND(
+		&node.Node{Kind: node.ViewKind, Focusable: true, OnKey: handler},
+		&node.Node{Kind: node.ViewKind, Focusable: true, OnKey: func(node.KeyPress) bool {
+			t.Error("unfocused node should not receive key")
+			return true
+		}},
+	))
+
+	// Focus is on the first focusable node.
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'x'}})
+	if !received {
+		t.Error("focused node should have received the key")
+	}
+}
+
+func TestKeyBubblesUpParentChain(t *testing.T) {
+	rt := New()
+	childHandled := false
+	parentHandled := false
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(kp node.KeyPress) bool {
+			childHandled = true
+			return false // not consumed; let it bubble
+		},
+	}
+	parent := &node.Node{
+		Kind:     node.ViewKind,
+		Children: []*node.Node{child},
+		OnKey: func(kp node.KeyPress) bool {
+			parentHandled = true
+			return true
+		},
+	}
+	rt.Update(parent)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'z'}})
+	if !childHandled {
+		t.Error("focused child should have been tried first")
+	}
+	if !parentHandled {
+		t.Error("event should have bubbled to parent")
 	}
 }
 

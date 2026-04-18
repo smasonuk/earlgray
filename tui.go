@@ -15,6 +15,9 @@ import (
 // Node is the opaque tree element returned by View, Text, Keyed, etc.
 type Node = *inode.Node
 
+// KeyEvent holds data for a key handler.
+type KeyEvent = inode.KeyPress
+
 // TextOption configures a Text node.
 type TextOption func(*inode.TextOptions)
 
@@ -32,12 +35,37 @@ func WithAlign(a Align) TextOption {
 	}
 }
 
+// WithTextStyle sets the visual style of a text node.
+func WithTextStyle(s Style) TextOption {
+	return func(opts *inode.TextOptions) {
+		opts.Style = s
+	}
+}
+
 // View creates a container node with the given style and children.
 func View(s Style, children ...Node) Node {
 	return &inode.Node{
 		Kind:     inode.ViewKind,
 		Style:    s,
 		Children: children,
+	}
+}
+
+// ViewProps configures a View node with event handlers and focus.
+type ViewProps struct {
+	Style     Style
+	OnKey     func(KeyEvent) bool
+	Focusable bool
+}
+
+// ViewWith creates a container node with props and children.
+func ViewWith(props ViewProps, children ...Node) Node {
+	return &inode.Node{
+		Kind:      inode.ViewKind,
+		Style:     props.Style,
+		Children:  children,
+		OnKey:     props.OnKey,
+		Focusable: props.Focusable,
 	}
 }
 
@@ -66,6 +94,9 @@ func Keyed(key string, child Node) Node {
 // Component wraps a function component so it participates in the runtime.
 // The function is called on every render; state is preserved across calls
 // via UseState.
+//
+// Prefer named component functions. Inline closures may not preserve identity
+// unless wrapped in Keyed.
 func Component(fn func() Node) Node {
 	id := reflect.ValueOf(fn).Pointer()
 	return &inode.Node{
@@ -79,6 +110,13 @@ func Component(fn func() Node) Node {
 // It must only be called from within a component function.
 func UseState[T any](initial T) (T, func(T)) {
 	return runtime.UseState(initial)
+}
+
+// UseFocused reports whether this component's direct focusable child is the
+// currently focused node. It must only be called from within a component
+// function whose rendered root node has Focusable: true.
+func UseFocused() bool {
+	return runtime.IsFocused()
 }
 
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
@@ -96,17 +134,24 @@ func Run(root func() Node) error {
 	rt := runtime.New()
 	w, h2 := h.Size()
 
-	// Initial render.
-	rootNode := root()
-	rt.Update(rootNode)
-	rt.RunLayout(w, h2)
-	buf := screen.NewBuffer(w, h2)
-	rt.Render(buf)
-	render.FlushDiff(nil, buf, h)
-	h.Show()
-	h.HideCursor()
+	doRender := func(prev *screen.Buffer) *screen.Buffer {
+		rootNode := root()
+		rt.Update(rootNode)
+		rt.RunLayout(w, h2)
+		next := screen.NewBuffer(w, h2)
+		rt.Render(next)
+		render.FlushDiff(prev, next, h)
+		h.Show()
+		return next
+	}
 
-	prev := buf
+	// Initial render. ensureFocus inside Update may set dirty if focusable
+	// nodes were found, requiring a second render to reflect focus state.
+	prev := doRender(nil)
+	if rt.IsDirty() {
+		prev = doRender(prev)
+	}
+	h.HideCursor()
 
 	for {
 		ev := h.PollEvent()
@@ -122,21 +167,11 @@ func Run(root func() Node) error {
 				ev.Key.Key == 3 { // Ctrl-C
 				return nil
 			}
-			if !rt.HandleEvent(ev) {
-				// Event not consumed; re-render in case a component reacted.
-				rt.MarkDirty()
-			}
+			rt.HandleEvent(ev)
 		}
 
 		if rt.IsDirty() {
-			rootNode = root()
-			rt.Update(rootNode)
-			rt.RunLayout(w, h2)
-			next := screen.NewBuffer(w, h2)
-			rt.Render(next)
-			render.FlushDiff(prev, next, h)
-			h.Show()
-			prev = next
+			prev = doRender(prev)
 		}
 	}
 }

@@ -1,4 +1,5 @@
-// Command counter demonstrates UseState for interactive state management.
+// Command twocounters demonstrates focus traversal with two independent counters.
+// Tab switches focus between the counters; +/- changes only the focused one.
 package main
 
 import (
@@ -10,10 +11,17 @@ import (
 )
 
 // Counter is a component that displays a count and responds to +/- keys.
+// It uses UseFocused to visually indicate which counter has focus.
 func Counter() tui.Node {
 	count, setCount := tui.UseState(0)
+	focused := tui.UseFocused()
 
 	label := "Count: " + strconv.Itoa(count)
+
+	borderFg := tui.Color{}
+	if focused {
+		borderFg = tui.ANSIColor(3) // yellow when focused
+	}
 
 	return tui.ViewWith(
 		tui.ViewProps{
@@ -34,23 +42,36 @@ func Counter() tui.Node {
 				}
 				return false
 			},
+			Focusable: true,
 		},
 		tui.View(
 			tui.Style{
-				Border:  tui.BorderAll,
-				Padding: tui.All(1),
+				Border:     tui.BorderAll,
+				Padding:    tui.All(1),
+				Foreground: borderFg,
 			},
 			tui.Text(label),
 		),
 		tui.View(
-			tui.Style{Height: tui.Cells(1), Padding: tui.Insets{Left: 1}},
-			tui.Text("Press '+'/'-' to change, 'q' to quit"),
+			tui.Style{Height: tui.Cells(1)},
+			tui.Text(focusHint(focused)),
 		),
 	)
 }
 
+func focusHint(focused bool) string {
+	if focused {
+		return "[ focused ] +/- to change"
+	}
+	return "Tab to focus"
+}
+
 func App() tui.Node {
-	return tui.Component(Counter)
+	return tui.View(
+		tui.Style{Direction: tui.Row, FlexGrow: 1},
+		tui.Keyed("a", tui.Component(Counter)),
+		tui.Keyed("b", tui.Component(Counter)),
+	)
 }
 
 func main() {
