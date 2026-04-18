@@ -637,3 +637,70 @@ func TestTextPanelFlexGrowParticipatesInParentColumn(t *testing.T) {
 		t.Fatalf("TextPanel height = %d, want 20", tree.Children[0].Result.Rect.H)
 	}
 }
+
+func TestTextPanelIntrinsicScrollbarAddsWidth(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Text: "hello\nworld\nagain",
+		TextPanelOpts: node.TextPanelOptions{
+			ShowScrollbar: true,
+		},
+	}
+
+	// Parent has height 2, but text has height 3 (3 lines)
+	// So overflowY is true.
+	parent := viewNode(style.Style{Direction: style.Row}, n)
+	tree := Layout(parent, exactC(80, 2))
+
+	// "hello" is width 5. Scrollbar should add 1, total 6.
+	if tree.Children[0].Result.Rect.W != 6 {
+		t.Fatalf("TextPanel auto width = %d, want 6 including scrollbar", tree.Children[0].Result.Rect.W)
+	}
+}
+
+func TestTextPanelIntrinsicWordWrapHeight(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Text: "alpha beta gamma",
+		TextPanelOpts: node.TextPanelOptions{
+			WordWrap: true,
+		},
+	}
+
+	// Parent is Row, which allows child to choose its own width/height up to constraints.
+	// But TextPanel with WordWrap: true needs a width to wrap.
+	// In my implementation, it wraps to available width if it's smaller than max line width.
+	// Wait, how does it handle auto-width with word-wrap?
+	// Usually, if it's auto-width, it should probably use the max line width without wrapping.
+	// But if it has WordWrap enabled, it might wrap if constrained.
+	
+	// Let's see how Layout handles it.
+	parent := viewNode(style.Style{Direction: style.Row}, n)
+	tree := Layout(parent, exactC(10, 10))
+
+	got := tree.Children[0].Result.Rect
+	// "alpha beta gamma"
+	// At width 10: "alpha beta" (10), "gamma" (5)
+	// So Height should be 2.
+	if got.W != 10 || got.H != 2 {
+		t.Fatalf("TextPanel intrinsic rect = %+v, want 10x2", got)
+	}
+}
+
+func TestTextPanelIntrinsicScrollbarDoesNotAddWidthWhenContentFits(t *testing.T) {
+	n := &node.Node{
+		Kind: node.TextPanelKind,
+		Text: "hello\nworld",
+		TextPanelOpts: node.TextPanelOptions{
+			ShowScrollbar: true,
+		},
+	}
+
+	parent := viewNode(style.Style{Direction: style.Row}, n)
+	tree := Layout(parent, exactC(80, 2))
+
+	got := tree.Children[0].Result.Rect
+	if got.W != 5 {
+		t.Fatalf("TextPanel auto width = %d, want 5 without scrollbar", got.W)
+	}
+}

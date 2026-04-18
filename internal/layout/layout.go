@@ -582,8 +582,17 @@ func measureChildrenIntrinsic(children []*node.Node, maxW, maxH int, dir style.D
 
 func measureTextPanelIntrinsic(text string, opts node.TextPanelOptions, maxW, maxH int) (w, h int) {
 	visual := textflow.VisualLines(text, opts.WordWrap, maxW)
-	h = len(visual)
+
+	rawH := len(visual)
 	w = textflow.MaxLineWidth(visual)
+	h = rawH
+
+	overflowY := opts.ShowScrollbar && maxH > 0 && rawH > maxH
+	if overflowY {
+		if maxW <= 0 || w < maxW {
+			w++
+		}
+	}
 
 	if maxW > 0 && w > maxW {
 		w = maxW
