@@ -97,6 +97,15 @@ const (
 	MouseWheelDown = input.MouseWheelDown
 )
 
+// MouseAction identifies the type of mouse activity.
+type MouseAction = input.MouseAction
+
+const (
+	MousePress   = input.ActionPress
+	MouseRelease = input.ActionRelease
+	MouseMotion  = input.ActionMotion
+)
+
 // MouseEvent holds data for a mouse handler.
 type MouseEvent = input.MousePress
 
@@ -309,7 +318,7 @@ func Button(props ButtonProps) Node {
 					return false
 				},
 				OnMouse: func(ev MouseEvent) bool {
-					if ev.Button&MouseLeft != 0 && !props.Disabled && props.OnPress != nil {
+					if ev.Button&MouseLeft != 0 && ev.Action == MousePress && !props.Disabled && props.OnPress != nil {
 						props.OnPress()
 						return true
 					}
@@ -374,7 +383,7 @@ func Checkbox(props CheckboxProps) Node {
 					return false
 				},
 				OnMouse: func(ev MouseEvent) bool {
-					if ev.Button&MouseLeft == 0 || props.Disabled || props.OnChange == nil {
+					if ev.Button&MouseLeft == 0 || ev.Action != MousePress || props.Disabled || props.OnChange == nil {
 						return false
 					}
 					props.OnChange(!props.Value)
@@ -558,7 +567,47 @@ func TextInput(props TextInputProps) Node {
 
 		nd := ViewWith(
 			ViewProps{
-				Style:     s,
+				Style: s,
+				OnMouse: func(ev MouseEvent) bool {
+					if props.Disabled || ev.Button&MouseLeft == 0 || ev.Action != MousePress {
+						return false
+					}
+
+					runes := []rune(props.Value)
+					cw, fixed := textInputContentWidthFromStyle(props.Style)
+
+					start := 0
+					if fixed {
+						maxWidth := cw - 1
+						start = cursor
+						wBefore := 0
+						for start > 0 {
+							rw := runewidth.RuneWidth(runes[start-1])
+							if wBefore+rw > maxWidth {
+								break
+							}
+							wBefore += rw
+							start--
+						}
+					}
+
+					x := 0
+					for i := start; i < len(runes); i++ {
+						rw := runewidth.RuneWidth(runes[i])
+						if ev.LocalX < x+rw {
+							// Clicked on this rune.
+							if ev.LocalX < x+(rw+1)/2 {
+								setCursor(i)
+							} else {
+								setCursor(i + 1)
+							}
+							return true
+						}
+						x += rw
+					}
+					setCursor(len(runes))
+					return true
+				},
 				Focusable: !props.Disabled,
 				AutoFocus: props.AutoFocus,
 				Disabled:  props.Disabled,
@@ -693,7 +742,7 @@ func List(props ListProps) Node {
 				ViewProps{
 					Style: itemStyle,
 					OnMouse: func(ev MouseEvent) bool {
-						if ev.Button&MouseLeft == 0 || props.Disabled || props.OnSelect == nil {
+						if ev.Button&MouseLeft == 0 || ev.Action != MousePress || props.Disabled || props.OnSelect == nil {
 							return false
 						}
 						props.OnSelect(idx)
@@ -809,7 +858,7 @@ func RadioGroup(props RadioGroupProps) Node {
 				ViewProps{
 					Style: itemStyle,
 					OnMouse: func(ev MouseEvent) bool {
-						if ev.Button&MouseLeft == 0 || props.Disabled {
+						if ev.Button&MouseLeft == 0 || ev.Action != MousePress || props.Disabled {
 							return false
 						}
 						return selectIndex(idx)
@@ -990,7 +1039,7 @@ func Select(props SelectProps) Node {
 					return false
 				},
 				OnMouse: func(ev MouseEvent) bool {
-					if ev.Button&MouseLeft == 0 || props.Disabled || len(props.Options) == 0 || props.OnChange == nil {
+					if ev.Button&MouseLeft == 0 || ev.Action != MousePress || props.Disabled || len(props.Options) == 0 || props.OnChange == nil {
 						return false
 					}
 					return selectIndex(nextIndex())

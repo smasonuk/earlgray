@@ -196,3 +196,20 @@ func Merge(parent, child Style) Style {
 
 	return out
 }
+
+// MergeVisual returns a new style that inherits colors and visual text attributes (bold, italic, underline) from parent.
+func MergeVisual(parent, child Style) Style {
+	out := Merge(parent, child)
+
+	if parent.Bold {
+		out.Bold = true
+	}
+	if parent.Italic {
+		out.Italic = true
+	}
+	if parent.Underline {
+		out.Underline = true
+	}
+
+	return out
+}

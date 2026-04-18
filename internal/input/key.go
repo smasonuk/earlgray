@@ -52,9 +52,20 @@ const (
 	MouseWheelDown MouseButton = 1 << 4
 )
 
+// MouseAction identifies the type of mouse activity.
+type MouseAction int
+
+const (
+	ActionPress MouseAction = iota
+	ActionRelease
+	ActionMotion
+)
+
 // MousePress holds data delivered to an OnMouse handler.
 type MousePress struct {
-	X, Y   int
-	Button MouseButton
-	Mod    Mod
+	X, Y           int
+	LocalX, LocalY int
+	Button         MouseButton
+	Action         MouseAction
+	Mod            Mod
 }

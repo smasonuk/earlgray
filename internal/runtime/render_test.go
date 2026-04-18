@@ -80,6 +80,32 @@ func TestRenderViewPadding(t *testing.T) {
 	}
 }
 
+func TestRenderVisualStyleInheritance(t *testing.T) {
+	// Root view with Bold: true and Yellow foreground
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Bold:       true,
+			Foreground: color.ANSIColor(3),
+		},
+		Children: []*node.Node{
+			{
+				Kind: node.TextKind,
+				Text: "bold yellow",
+			},
+		},
+	}
+	buf := renderHelper(nd, 15, 1)
+
+	c := buf.At(0, 0)
+	if !c.Style.Bold {
+		t.Error("text should inherit bold from parent")
+	}
+	if c.Style.Fg.Kind != color.ANSI || c.Style.Fg.ANSIVal != 3 {
+		t.Errorf("text should inherit yellow color from parent, got %v", c.Style.Fg)
+	}
+}
+
 func TestRenderCenteredText(t *testing.T) {
 	// Create a text node with width 10 containing centered text "hi".
 	// Expected: "h" at x=4, "i" at x=5 (centered in 10-cell width)

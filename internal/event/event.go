@@ -97,6 +97,7 @@ func NormalizeKey(tcellKey tcell.Key, rune rune) input.Key {
 type Mouse struct {
 	X, Y   int
 	Button input.MouseButton
+	Action input.MouseAction
 	Mod    tcell.ModMask
 }
 

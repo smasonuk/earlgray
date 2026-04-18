@@ -77,6 +77,8 @@ type Runtime struct {
 	// scopeStack tracks nested focus scopes. Each frame records the scope instance
 	// and what was focused before entering that scope.
 	scopeStack []focusScopeFrame
+
+	lastMouseButtons input.MouseButton
 }
 
 // New creates a new Runtime.
@@ -247,6 +249,16 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 // handleMouse dispatches a mouse event: hit-tests, focuses clicked nodes,
 // scrolls TextPanels on wheel events, and bubbles OnMouse handlers.
 func (r *Runtime) handleMouse(m event.Mouse) bool {
+	action := input.ActionMotion
+	if m.Button != r.lastMouseButtons {
+		if (m.Button & ^r.lastMouseButtons) != 0 {
+			action = input.ActionPress
+		} else {
+			action = input.ActionRelease
+		}
+		r.lastMouseButtons = m.Button
+	}
+
 	focusRoot := activeFocusRoot(r.root)
 	hit := hitTest(focusRoot, m.X, m.Y)
 	if hit == nil {
@@ -257,7 +269,7 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 
 	// Left click: focus the nearest focusable ancestor of the hit node.
 	// hitTest returns the deepest node (often a Text leaf); walking up finds the widget.
-	if m.Button&input.MouseLeft != 0 {
+	if action == input.ActionPress && m.Button&input.MouseLeft != 0 {
 		if target := nearestFocusableAncestor(hit, focusRoot); target != nil {
 			if r.focused != target {
 				r.focused = target
@@ -290,14 +302,17 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 	}
 
 	// Bubble OnMouse from the hit instance up to the focus root.
-	press := input.MousePress{
-		X:      m.X,
-		Y:      m.Y,
-		Button: m.Button,
-		Mod:    normalizeMod(m.Mod),
-	}
 	for inst := hit; inst != nil; inst = inst.parent {
 		if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnMouse != nil {
+			press := input.MousePress{
+				X:      m.X,
+				Y:      m.Y,
+				LocalX: m.X - inst.layout.Content.X,
+				LocalY: m.Y - inst.layout.Content.Y,
+				Button: m.Button,
+				Action: action,
+				Mod:    normalizeMod(m.Mod),
+			}
 			if inst.nd.OnMouse(press) {
 				consumed = true
 				break
@@ -718,7 +733,7 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	content := inst.layout.Content
 
 	if inst.nd.Kind == node.OverlayKind {
-		s := style.Merge(inherited, inst.nd.Style)
+		s := style.MergeVisual(inherited, inst.nd.Style)
 
 		if inst.nd.Style.Background.IsSpecified() {
 			fillStyle := screen.CellStyle{
@@ -742,7 +757,7 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	}
 
 	if inst.nd.Kind == node.TextPanelKind {
-		s := style.Merge(inherited, inst.nd.Style)
+		s := style.MergeVisual(inherited, inst.nd.Style)
 
 		fillStyle := screen.CellStyle{
 			Fg: s.Foreground,
@@ -762,7 +777,7 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	}
 
 	if inst.nd.Kind == node.ViewKind {
-		s := style.Merge(inherited, inst.nd.Style)
+		s := style.MergeVisual(inherited, inst.nd.Style)
 
 		fillStyle := screen.CellStyle{
 			Fg: s.Foreground,
@@ -805,7 +820,7 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.TextKind {
 		opts := inst.nd.TextOpts
-		s := style.Merge(inherited, opts.Style)
+		s := style.MergeVisual(inherited, opts.Style)
 		textStyle := screen.CellStyle{
 			Fg:        s.Foreground,
 			Bg:        s.Background,
