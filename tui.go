@@ -577,7 +577,7 @@ func TextInput(props TextInputProps) Node {
 					cw, fixed := textInputContentWidthFromStyle(props.Style)
 
 					start := 0
-					if fixed {
+					if fixed && focused {
 						maxWidth := cw - 1
 						start = cursor
 						wBefore := 0

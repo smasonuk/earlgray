@@ -130,6 +130,61 @@ func TestRadioGroupMouseClickFocusAndSelect(t *testing.T) {
 	}
 }
 
+// TestTextInputUnfocusedFixedCursorAtStartOnClick verifies Ticket 2 fix:
+// when a fixed-width TextInput is unfocused, clicking near the start of the
+// visible area places the cursor at the beginning of the string, not near
+// the end where the internal cursor was previously positioned.
+func TestTextInputUnfocusedFixedCursorAtStartOnClick(t *testing.T) {
+	// Button at y=0 gets AutoFocus; TextInput at y=1 starts unfocused with cursor=26.
+	app := func() Node {
+		return View(Style{Direction: Column},
+			Button(ButtonProps{Label: "btn", AutoFocus: true}),
+			Keyed("input", TextInput(TextInputProps{
+				Value: "abcdefghijklmnopqrstuvwxyz",
+				Style: Style{Width: Cells(10)},
+			})),
+		)
+	}
+	events := []event.Event{
+		{Kind: event.MouseKind, Mouse: event.Mouse{X: 0, Y: 1, Button: MouseLeft}},
+	}
+	fake := newFakeHost(80, 24, events)
+	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+	// With fix: start=0 (unfocused), click at LocalX=0 → cursor=0, CursorX=0.
+	// Without fix: start=17 (scrolled from cursor=26), click at LocalX=0 → cursor=17, CursorX=9.
+	if fake.cursorX != 0 {
+		t.Errorf("unfocused fixed TextInput click at start: expected cursorX=0, got %d", fake.cursorX)
+	}
+}
+
+// TestTextInputFocusedFixedScrolledCursorOnClick verifies that the fix does not
+// break focused fixed-width inputs: clicking inside a scrolled focused input
+// still maps against the currently visible scrolled substring.
+func TestTextInputFocusedFixedScrolledCursorOnClick(t *testing.T) {
+	// TextInput focused with cursor at end (index 26). Width=10, maxWidth=9.
+	// Visible window starts at rune 17. Click at x=0 (LocalX=0) → cursor=17.
+	// After re-render: visible window backs up 9 from 17 → start=8, CursorX=9.
+	app := func() Node {
+		return TextInput(TextInputProps{
+			Value:     "abcdefghijklmnopqrstuvwxyz",
+			AutoFocus: true,
+			Style:     Style{Width: Cells(10)},
+		})
+	}
+	events := []event.Event{
+		{Kind: event.MouseKind, Mouse: event.Mouse{X: 0, Y: 0, Button: MouseLeft}},
+	}
+	fake := newFakeHost(80, 24, events)
+	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if fake.cursorX != 9 {
+		t.Errorf("focused scrolled TextInput click at left edge: expected cursorX=9, got %d", fake.cursorX)
+	}
+}
+
 func TestDisabledListMouseClick(t *testing.T) {
 	selected := -1
 	app := func() Node {

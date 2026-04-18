@@ -2639,3 +2639,33 @@ func TestTextPanelHorizontalScrollDoesNotRenderPartialWideRune(t *testing.T) {
 		t.Errorf("expected 'a' at (1,0), got %q", r)
 	}
 }
+
+// TestHomePageContainerNotFocusable verifies Ticket 1: a container without
+// Focusable: true is not a focus stop, so Tab only cycles through inner buttons.
+func TestHomePageContainerNotFocusable(t *testing.T) {
+	rt := runtime.New()
+	root := ViewWith(ViewProps{Style: Style{Direction: Column, FlexGrow: 1}},
+		Button(ButtonProps{Label: "[ Open Dialog ]"}),
+		Button(ButtonProps{Label: "[ Settings ]"}),
+	)
+	updateUntilClean(rt, root)
+
+	first := rt.Focused()
+	if first == nil {
+		t.Fatal("expected a button to be focused initially")
+	}
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyTab}})
+	second := rt.Focused()
+	if second == first {
+		t.Error("Tab should move focus to the second button")
+	}
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyTab}})
+	back := rt.Focused()
+	// With only 2 focusable nodes (the two buttons), a second Tab wraps back.
+	// If the container were also focusable there would be 3 stops and this would fail.
+	if back != first {
+		t.Error("two tabs with 2 buttons should wrap back to the first (no invisible focus stop)")
+	}
+}

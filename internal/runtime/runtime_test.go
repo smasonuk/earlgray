@@ -1117,6 +1117,42 @@ func TestNestedFocusScopeFallsBackWhenRestoreTargetDisabled(t *testing.T) {
 	}
 }
 
+// TestHandleMouseActionDerivation verifies Ticket 3: runtime derives ActionPress,
+// ActionMotion, and ActionRelease from lastMouseButtons state, not from event.Mouse.Action.
+func TestHandleMouseActionDerivation(t *testing.T) {
+	var actions []input.MouseAction
+	rt := New()
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		OnMouse: func(mp input.MousePress) bool {
+			actions = append(actions, mp.Action)
+			return true
+		},
+	}
+	rt.Update(nd)
+	rt.RunLayout(80, 24)
+
+	// First left-button event: button state changed from none → left → ActionPress.
+	rt.handleMouse(event.Mouse{X: 0, Y: 0, Button: input.MouseLeft})
+	// Same button mask, different position: ActionMotion.
+	rt.handleMouse(event.Mouse{X: 5, Y: 0, Button: input.MouseLeft})
+	// Button released (mask back to none): ActionRelease.
+	rt.handleMouse(event.Mouse{X: 5, Y: 0, Button: input.MouseNone})
+
+	if len(actions) != 3 {
+		t.Fatalf("expected 3 mouse actions, got %d", len(actions))
+	}
+	if actions[0] != input.ActionPress {
+		t.Errorf("action[0]: expected ActionPress, got %v", actions[0])
+	}
+	if actions[1] != input.ActionMotion {
+		t.Errorf("action[1]: expected ActionMotion, got %v", actions[1])
+	}
+	if actions[2] != input.ActionRelease {
+		t.Errorf("action[2]: expected ActionRelease, got %v", actions[2])
+	}
+}
+
 func TestRunLayoutComponentRootFlexGrowParticipatesInParentLayout(t *testing.T) {
 	compFn := func() *node.Node {
 		return &node.Node{
