@@ -345,6 +345,34 @@ func TestMeasureTextRespectMaxWidth(t *testing.T) {
 	}
 }
 
+func TestMeasureRichTextAcrossMultipleSpans(t *testing.T) {
+	w, h := measureRichText([]node.TextSpan{
+		{Text: "hello "},
+		{Text: "world"},
+	}, 0, 0)
+
+	if w != 11 {
+		t.Errorf("expected width 11, got %d", w)
+	}
+	if h != 1 {
+		t.Errorf("expected height 1, got %d", h)
+	}
+}
+
+func TestMeasureRichTextNewlinesAcrossSpans(t *testing.T) {
+	w, h := measureRichText([]node.TextSpan{
+		{Text: "hello\n"},
+		{Text: "world"},
+	}, 0, 0)
+
+	if w != 5 {
+		t.Errorf("expected width 5, got %d", w)
+	}
+	if h != 2 {
+		t.Errorf("expected height 2, got %d", h)
+	}
+}
+
 func TestOverlayChildrenReceiveSameRect(t *testing.T) {
 	n := &node.Node{
 		Kind: node.OverlayKind,

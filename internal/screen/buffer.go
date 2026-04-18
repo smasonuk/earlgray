@@ -8,10 +8,13 @@ import (
 
 // CellStyle describes text attributes for a single cell.
 type CellStyle struct {
-	Fg, Bg    color.Color
-	Bold      bool
-	Italic    bool
-	Underline bool
+	Fg, Bg        color.Color
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Faint         bool
+	Strikethrough bool
+	Reverse       bool
 }
 
 // Cell is a single terminal cell with a rune and its style.

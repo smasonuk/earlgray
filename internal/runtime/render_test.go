@@ -263,6 +263,29 @@ func TestRenderStyleInheritance(t *testing.T) {
 	}
 }
 
+func TestRenderStyleInheritanceIncludesReverse(t *testing.T) {
+	nd := &node.Node{
+		Kind: node.ViewKind,
+		Style: style.Style{
+			Width:   style.Cells(10),
+			Height:  style.Cells(1),
+			Reverse: true,
+		},
+		Children: []*node.Node{
+			{
+				Kind: node.TextKind,
+				Text: "x",
+			},
+		},
+	}
+	buf := renderHelper(nd, 10, 1)
+
+	c := buf.At(0, 0)
+	if !c.Style.Reverse {
+		t.Error("text should inherit reverse from parent")
+	}
+}
+
 func TestRenderStyleInheritanceOverride(t *testing.T) {
 	// Create a parent view with foreground color and a child text with explicit color.
 	nd := &node.Node{

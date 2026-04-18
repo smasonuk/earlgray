@@ -20,17 +20,20 @@ func TestOverlayVisualStyleAppliesOnlyVisualFields(t *testing.T) {
 		Gap:     2,
 	}
 	focus := Style{
-		Width:      Cells(99),
-		Height:     Cells(99),
-		Border:     BorderNone,
-		Padding:    All(9),
-		Gap:        9,
-		FlexGrow:   99,
-		Foreground: ANSIColor(3),
-		Background: ANSIColor(4),
-		Bold:       true,
-		Italic:     true,
-		Underline:  true,
+		Width:         Cells(99),
+		Height:        Cells(99),
+		Border:        BorderNone,
+		Padding:       All(9),
+		Gap:           9,
+		FlexGrow:      99,
+		Foreground:    ANSIColor(3),
+		Background:    ANSIColor(4),
+		Bold:          true,
+		Italic:        true,
+		Underline:     true,
+		Faint:         true,
+		Strikethrough: true,
+		Reverse:       true,
 	}
 
 	got := overlayVisualStyle(base, focus)
@@ -68,6 +71,140 @@ func TestOverlayVisualStyleAppliesOnlyVisualFields(t *testing.T) {
 	}
 	if !got.Underline {
 		t.Fatal("focused visual style should apply underline")
+	}
+	if !got.Faint {
+		t.Fatal("focused visual style should apply faint")
+	}
+	if !got.Strikethrough {
+		t.Fatal("focused visual style should apply strikethrough")
+	}
+	if !got.Reverse {
+		t.Fatal("focused visual style should apply reverse")
+	}
+}
+
+func TestRichTextRendersStyledSpans(t *testing.T) {
+	rt := runtime.New()
+	root := RichText(
+		TextSpan{Text: "hello "},
+		TextSpan{Text: "world", Style: Style{Bold: true}},
+	)
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != 'h' {
+		t.Fatalf("expected first rune to be 'h', got %q", got)
+	}
+	if got := buf.At(6, 0).Rune; got != 'w' {
+		t.Fatalf("expected styled span to start with 'w', got %q", got)
+	}
+	if !buf.At(6, 0).Style.Bold {
+		t.Fatal("expected second span cells to be bold")
+	}
+	if buf.At(0, 0).Style.Bold {
+		t.Fatal("expected first span cells to keep default bold=false")
+	}
+}
+
+func TestRichTextHandlesNewlines(t *testing.T) {
+	rt := runtime.New()
+	root := RichText(
+		TextSpan{Text: "line1\n"},
+		TextSpan{Text: "line2"},
+	)
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 1).Rune; got != 'l' {
+		t.Fatalf("expected second line to start with 'l', got %q", got)
+	}
+}
+
+func TestRichTextInheritsParentColor(t *testing.T) {
+	rt := runtime.New()
+	root := View(Style{Foreground: ANSIColor(3)}, RichText(
+		TextSpan{Text: "hello"},
+		TextSpan{Text: " world"},
+	))
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Style.Fg; got != ANSIColor(3) {
+		t.Fatalf("expected rich text to inherit parent foreground, got %v", got)
+	}
+}
+
+func TestANSITextRendersColorsWithoutEscapeSequences(t *testing.T) {
+	rt := runtime.New()
+	root := ANSIText("\x1b[31mred\x1b[0m")
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != 'r' {
+		t.Fatalf("expected first rune to be 'r', got %q", got)
+	}
+	if got := buf.At(0, 0).Style.Fg; got != ANSIColor(1) {
+		t.Fatalf("expected ANSI red foreground, got %v", got)
+	}
+	if got := buf.At(3, 0).Rune; got == '[' || got == '3' {
+		t.Fatal("expected ANSI escape sequence bytes to be hidden")
+	}
+}
+
+func TestANSITextResetRestoresBaseStyle(t *testing.T) {
+	rt := runtime.New()
+	root := ANSIText("a\x1b[31mb\x1b[0mc", WithTextStyle(Style{Foreground: ANSIColor(2)}))
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(1, 0).Style.Fg; got != ANSIColor(1) {
+		t.Fatalf("expected styled middle rune to be red, got %v", got)
+	}
+	if got := buf.At(2, 0).Style.Fg; got != ANSIColor(2) {
+		t.Fatalf("expected reset rune to return to base green, got %v", got)
+	}
+}
+
+func TestANSITextMalformedSequenceDoesNotPanic(t *testing.T) {
+	rt := runtime.New()
+	root := ANSIText("hello\x1b[31")
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != 'h' {
+		t.Fatalf("expected literal text to be preserved, got %q", got)
+	}
+}
+
+func TestTextStyleStrikethroughReachesCells(t *testing.T) {
+	rt := runtime.New()
+	root := Text("done", WithTextStyle(Style{Strikethrough: true}))
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if !buf.At(0, 0).Style.Strikethrough {
+		t.Fatal("expected strikethrough to reach rendered cell style")
 	}
 }
 
@@ -2637,6 +2774,96 @@ func TestTextPanelHorizontalScrollDoesNotRenderPartialWideRune(t *testing.T) {
 	}
 	if r := buf.At(1, 0).Rune; r != 'a' {
 		t.Errorf("expected 'a' at (1,0), got %q", r)
+	}
+}
+
+func TestTextPanelAutoScrollBottomShowsLatestContent(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:             "1\n2\n3\n4\n5",
+		AutoScrollBottom: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if r := buf.At(0, 0).Rune; r != '4' {
+		t.Errorf("expected '4' at (0,0) when pinned to bottom, got %q", r)
+	}
+	if r := buf.At(0, 1).Rune; r != '5' {
+		t.Errorf("expected '5' at (0,1) when pinned to bottom, got %q", r)
+	}
+}
+
+func TestTextPanelResetScrollKeyResetsScrollPosition(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:      "1\n2\n3\n4\n5",
+		AutoFocus: true,
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnd}})
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	root = TextPanel(TextPanelProps{
+		Text:           "1\n2\n3\n4\n5",
+		AutoFocus:      true,
+		ResetScrollKey: "next",
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if r := buf.At(0, 0).Rune; r != '1' {
+		t.Errorf("expected reset scroll to return to top, got %q", r)
+	}
+}
+
+func TestTextPanelResetScrollKeyUnchangedPreservesScrollPosition(t *testing.T) {
+	rt := runtime.New()
+	root := TextPanel(TextPanelProps{
+		Text:           "1\n2\n3\n4\n5",
+		AutoFocus:      true,
+		ResetScrollKey: "stable",
+		Style: Style{
+			Width:  Cells(10),
+			Height: Cells(2),
+		},
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEnd}})
+	rt.RunLayout(80, 24)
+	rt.Render(screen.NewBuffer(80, 24))
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if r := buf.At(0, 0).Rune; r != '4' {
+		t.Errorf("expected scroll position to be preserved, got %q", r)
 	}
 }
 

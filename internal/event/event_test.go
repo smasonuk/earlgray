@@ -42,7 +42,7 @@ func TestNormalizeKeyRune(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NormalizeKey(tt.tcellKey, tt.rune)
+			got := NormalizeKey(tt.tcellKey, tt.rune, 0)
 			if got != tt.want {
 				t.Errorf("NormalizeKey(%v, %q) = %v, want %v", tt.tcellKey, tt.rune, got, tt.want)
 			}
@@ -75,7 +75,7 @@ func TestNormalizeKeySpecialKeys(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NormalizeKey(tt.tcellKey, 0)
+			got := NormalizeKey(tt.tcellKey, 0, 0)
 			if got != tt.want {
 				t.Errorf("NormalizeKey(%v, 0) = %v, want %v", tt.tcellKey, got, tt.want)
 			}
@@ -86,7 +86,7 @@ func TestNormalizeKeySpecialKeys(t *testing.T) {
 func TestNormalizeKeyUnknown(t *testing.T) {
 	// Some arbitrary key code that we don't handle
 	unknownKey := tcell.Key(9999)
-	got := NormalizeKey(unknownKey, 0)
+	got := NormalizeKey(unknownKey, 0, 0)
 	if got != input.KeyUnknown {
 		t.Errorf("NormalizeKey(unknown) = %v, want KeyUnknown", got)
 	}
@@ -94,9 +94,23 @@ func TestNormalizeKeyUnknown(t *testing.T) {
 
 func TestNormalizeKeyRuneWithNonRuneKey(t *testing.T) {
 	// If we have a rune but tcellKey is not KeyRune, still return KeyRune
-	got := NormalizeKey(tcell.KeyEnter, 'x')
+	got := NormalizeKey(tcell.KeyEnter, 'x', 0)
 	if got != input.KeyRune {
 		t.Errorf("NormalizeKey(KeyEnter, 'x') = %v, want KeyRune", got)
+	}
+}
+
+func TestNormalizeKeyCtrlCKeyCtrlC(t *testing.T) {
+	got := NormalizeKey(tcell.KeyCtrlC, 0, 0)
+	if got != input.KeyCtrlC {
+		t.Errorf("NormalizeKey(KeyCtrlC, 0) = %v, want KeyCtrlC", got)
+	}
+}
+
+func TestNormalizeKeyCtrlCModifiedRune(t *testing.T) {
+	got := NormalizeKey(tcell.KeyRune, 'c', tcell.ModCtrl)
+	if got != input.KeyCtrlC {
+		t.Errorf("NormalizeKey(KeyRune, 'c', ModCtrl) = %v, want KeyCtrlC", got)
 	}
 }
 

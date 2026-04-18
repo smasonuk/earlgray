@@ -7,6 +7,7 @@ type Key int
 const (
 	KeyUnknown Key = iota
 	KeyRune        // printable character in KeyPress.Rune
+	KeyCtrlC
 	KeyEnter
 	KeyEsc
 	KeyBackspace

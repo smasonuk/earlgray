@@ -703,6 +703,135 @@ func TestFallbackDeliveryStillVisitsChildOfDisabledParent(t *testing.T) {
 	}
 }
 
+func TestOnKeyCaptureRunsBeforeFocusedBubble(t *testing.T) {
+	rt := New()
+	var order []string
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(node.KeyPress) bool {
+			order = append(order, "child")
+			return false
+		},
+	}
+	root := &node.Node{
+		Kind:     node.ViewKind,
+		Children: []*node.Node{child},
+		OnKeyCapture: func(node.KeyPress) bool {
+			order = append(order, "root-capture")
+			return false
+		},
+	}
+	rt.Update(root)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if len(order) != 2 || order[0] != "root-capture" || order[1] != "child" {
+		t.Fatalf("expected capture before bubble, got %v", order)
+	}
+}
+
+func TestOnKeyCaptureCanConsumeBeforeFocusedChild(t *testing.T) {
+	rt := New()
+	childHandled := false
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(node.KeyPress) bool {
+			childHandled = true
+			return true
+		},
+	}
+	root := &node.Node{
+		Kind:     node.ViewKind,
+		Children: []*node.Node{child},
+		OnKeyCapture: func(node.KeyPress) bool {
+			return true
+		},
+	}
+	rt.Update(root)
+
+	if !rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEsc}}) {
+		t.Fatal("expected capture handler to consume key")
+	}
+	if childHandled {
+		t.Fatal("focused child should not receive a key consumed during capture")
+	}
+}
+
+func TestOnKeyCaptureRespectsActiveFocusScope(t *testing.T) {
+	rt := New()
+	backgroundCapture := false
+	scopeCapture := false
+
+	background := &node.Node{
+		Kind: node.ViewKind,
+		OnKeyCapture: func(node.KeyPress) bool {
+			backgroundCapture = true
+			return false
+		},
+	}
+	scopeChild := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKeyCapture: func(node.KeyPress) bool {
+			scopeCapture = true
+			return false
+		},
+	}
+	scope := &node.Node{
+		Kind:       node.ViewKind,
+		FocusScope: true,
+		Children:   []*node.Node{scopeChild},
+	}
+	rt.Update(viewND(background, scope))
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if backgroundCapture {
+		t.Fatal("background capture handler should not run outside the active focus scope")
+	}
+	if !scopeCapture {
+		t.Fatal("capture handler inside the active focus scope should receive the key")
+	}
+}
+
+func TestDisabledCaptureHandlerIsSkipped(t *testing.T) {
+	rt := New()
+	disabledCapture := false
+	childHandled := false
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(node.KeyPress) bool {
+			childHandled = true
+			return true
+		},
+	}
+	root := &node.Node{
+		Kind:     node.ViewKind,
+		Disabled: true,
+		Children: []*node.Node{child},
+		OnKeyCapture: func(node.KeyPress) bool {
+			disabledCapture = true
+			return true
+		},
+	}
+	rt.Update(root)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if disabledCapture {
+		t.Fatal("disabled capture handler should be skipped")
+	}
+	if !childHandled {
+		t.Fatal("child should still receive the key through normal bubbling")
+	}
+}
+
 func TestNormalizeModNone(t *testing.T) {
 	got := normalizeMod(0)
 	if got != 0 {

@@ -2,8 +2,11 @@ package tui
 
 import (
 	"reflect"
+	"sync"
+	"time"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/smason/earlgray/internal/ansi"
 	"github.com/smason/earlgray/internal/event"
 	"github.com/smason/earlgray/internal/host"
 	"github.com/smason/earlgray/internal/input"
@@ -22,6 +25,7 @@ type Key = input.Key
 const (
 	KeyUnknown   = input.KeyUnknown
 	KeyRune      = input.KeyRune
+	KeyCtrlC     = input.KeyCtrlC
 	KeyEnter     = input.KeyEnter
 	KeyEsc       = input.KeyEsc
 	KeyBackspace = input.KeyBackspace
@@ -111,12 +115,13 @@ type MouseEvent = input.MousePress
 
 // ViewProps configures a View node with event handlers and focus.
 type ViewProps struct {
-	Style     Style
-	OnKey     func(KeyEvent) bool
-	OnMouse   func(MouseEvent) bool
-	Focusable bool
-	AutoFocus bool
-	Disabled  bool
+	Style        Style
+	OnKey        func(KeyEvent) bool
+	OnKeyCapture func(KeyEvent) bool
+	OnMouse      func(MouseEvent) bool
+	Focusable    bool
+	AutoFocus    bool
+	Disabled     bool
 
 	// FocusScope traps focus traversal within this view's subtree.
 	FocusScope bool
@@ -125,15 +130,16 @@ type ViewProps struct {
 // ViewWith creates a container node with props and children.
 func ViewWith(props ViewProps, children ...Node) Node {
 	return &inode.Node{
-		Kind:       inode.ViewKind,
-		Style:      props.Style,
-		Children:   children,
-		OnKey:      props.OnKey,
-		OnMouse:    props.OnMouse,
-		Focusable:  props.Focusable,
-		AutoFocus:  props.AutoFocus,
-		Disabled:   props.Disabled,
-		FocusScope: props.FocusScope,
+		Kind:         inode.ViewKind,
+		Style:        props.Style,
+		Children:     children,
+		OnKey:        props.OnKey,
+		OnKeyCapture: props.OnKeyCapture,
+		OnMouse:      props.OnMouse,
+		Focusable:    props.Focusable,
+		AutoFocus:    props.AutoFocus,
+		Disabled:     props.Disabled,
+		FocusScope:   props.FocusScope,
 	}
 }
 
@@ -146,6 +152,48 @@ func Text(value string, opts ...TextOption) Node {
 	return &inode.Node{
 		Kind:     inode.TextKind,
 		Text:     value,
+		TextOpts: textOpts,
+		Style:    textOpts.Style,
+	}
+}
+
+// TextSpan is a styled segment in a RichText node.
+type TextSpan struct {
+	Text  string
+	Style Style
+}
+
+func toInternalTextSpans(spans []TextSpan) []inode.TextSpan {
+	if len(spans) == 0 {
+		return nil
+	}
+	out := make([]inode.TextSpan, len(spans))
+	for i, span := range spans {
+		out[i] = inode.TextSpan{
+			Text:  span.Text,
+			Style: span.Style,
+		}
+	}
+	return out
+}
+
+// RichText creates a text node with multiple styled spans.
+func RichText(spans ...TextSpan) Node {
+	return &inode.Node{
+		Kind:  inode.RichTextKind,
+		Spans: toInternalTextSpans(spans),
+	}
+}
+
+// ANSIText parses ANSI SGR styling sequences into styled spans.
+func ANSIText(value string, opts ...TextOption) Node {
+	var textOpts inode.TextOptions
+	for _, o := range opts {
+		o(&textOpts)
+	}
+	return &inode.Node{
+		Kind:     inode.RichTextKind,
+		Spans:    ansi.ParseText(value),
 		TextOpts: textOpts,
 		Style:    textOpts.Style,
 	}
@@ -284,6 +332,15 @@ func overlayVisualStyle(base, focus Style) Style {
 	}
 	if focus.Underline {
 		out.Underline = true
+	}
+	if focus.Faint {
+		out.Faint = true
+	}
+	if focus.Strikethrough {
+		out.Strikethrough = true
+	}
+	if focus.Reverse {
+		out.Reverse = true
 	}
 	return out
 }
@@ -1071,6 +1128,16 @@ type TextPanelProps struct {
 	// has more lines than the visible viewport.
 	ShowScrollbar bool
 
+	// AutoScrollBottom forces the panel to remain pinned to the bottom.
+	AutoScrollBottom bool
+
+	// ResetScrollKey resets the retained scroll position when its value changes.
+	ResetScrollKey string
+
+	// InitialScrollX and InitialScrollY apply on mount and when ResetScrollKey changes.
+	InitialScrollX int
+	InitialScrollY int
+
 	AutoFocus bool
 	Disabled  bool
 }
@@ -1101,11 +1168,28 @@ func TextPanel(props TextPanelProps) Node {
 			AutoFocus: props.AutoFocus,
 			Disabled:  props.Disabled,
 			TextPanelOpts: inode.TextPanelOptions{
-				WordWrap:      props.WordWrap,
-				ShowScrollbar: props.ShowScrollbar,
+				WordWrap:         props.WordWrap,
+				ShowScrollbar:    props.ShowScrollbar,
+				AutoScrollBottom: props.AutoScrollBottom,
+				ResetScrollKey:   props.ResetScrollKey,
+				InitialScrollX:   props.InitialScrollX,
+				InitialScrollY:   props.InitialScrollY,
 			},
 		}
 	})
+}
+
+// AppHandle exposes safe app-level actions to background goroutines.
+type AppHandle struct {
+	Post  func(func())
+	Quit  func()
+	Every func(time.Duration, func()) func()
+}
+
+// RunOptions configures the TUI event loop.
+type RunOptions struct {
+	QuitOnCtrlC bool
+	OnStart     func(AppHandle)
 }
 
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
@@ -1115,7 +1199,14 @@ type hostFactory func() (host.Host, error)
 // Run starts the TUI event loop, rendering root on each update until Ctrl-C or
 // the terminal closes.
 func Run(root func() Node) error {
-	return runWithHost(root, func() (host.Host, error) {
+	return RunWithOptions(root, RunOptions{
+		QuitOnCtrlC: true,
+	})
+}
+
+// RunWithOptions starts the TUI event loop with configurable startup and quit behavior.
+func RunWithOptions(root func() Node, opts RunOptions) error {
+	return runWithHost(root, opts, func() (host.Host, error) {
 		h, err := host.NewTcellHost()
 		if err != nil {
 			return nil, err
@@ -1126,7 +1217,7 @@ func Run(root func() Node) error {
 
 // runWithHost is the testable core of Run. It accepts a host factory so tests
 // can inject a fake host without requiring a real terminal.
-func runWithHost(root func() Node, newHost hostFactory) error {
+func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 	h, err := newHost()
 	if err != nil {
 		return err
@@ -1135,6 +1226,68 @@ func runWithHost(root func() Node, newHost hostFactory) error {
 		return err
 	}
 	defer h.Close()
+
+	appEvents := make(chan func(), 1024)
+	hostEvents := make(chan event.Event, 64)
+	quit := make(chan struct{})
+	done := make(chan struct{})
+
+	var quitOnce sync.Once
+	var doneOnce sync.Once
+
+	shutdown := func() {
+		quitOnce.Do(func() {
+			close(quit)
+		})
+		doneOnce.Do(func() {
+			close(done)
+		})
+	}
+	defer shutdown()
+
+	var handle AppHandle
+	handle = AppHandle{
+		Post: func(fn func()) {
+			if fn == nil {
+				return
+			}
+			select {
+			case appEvents <- fn:
+			case <-quit:
+			}
+		},
+		Quit: shutdown,
+		Every: func(d time.Duration, fn func()) func() {
+			if d <= 0 || fn == nil {
+				return func() {}
+			}
+
+			stop := make(chan struct{})
+			var stopOnce sync.Once
+
+			go func() {
+				ticker := time.NewTicker(d)
+				defer ticker.Stop()
+
+				for {
+					select {
+					case <-ticker.C:
+						handle.Post(fn)
+					case <-stop:
+						return
+					case <-quit:
+						return
+					}
+				}
+			}()
+
+			return func() {
+				stopOnce.Do(func() {
+					close(stop)
+				})
+			}
+		},
+	}
 
 	rt := runtime.New()
 	w, h2 := h.Size()
@@ -1167,22 +1320,56 @@ func runWithHost(root func() Node, newHost hostFactory) error {
 
 	prev := renderUntilClean(nil)
 
-	for {
-		ev := h.PollEvent()
-		switch ev.Kind {
-		case event.QuitKind:
-			return nil
-		case event.ResizeKind:
-			w, h2 = ev.Width, ev.Height
-			rt.MarkDirty()
-		case event.KeyKind:
-			// Quit on Ctrl-C.
-			if ev.Key.IsCtrlC() {
-				return nil
+	if opts.OnStart != nil {
+		opts.OnStart(handle)
+	}
+
+	select {
+	case <-quit:
+		return nil
+	default:
+	}
+
+	go func() {
+		for {
+			ev := h.PollEvent()
+			select {
+			case hostEvents <- ev:
+			case <-done:
+				return
 			}
-			rt.HandleEvent(ev)
-		case event.MouseKind:
-			rt.HandleEvent(ev)
+			if ev.Kind == event.QuitKind {
+				return
+			}
+		}
+	}()
+
+	for {
+		select {
+		case <-quit:
+			return nil
+		case fn := <-appEvents:
+			if fn != nil {
+				fn()
+				rt.MarkDirty()
+			}
+		case ev := <-hostEvents:
+			switch ev.Kind {
+			case event.QuitKind:
+				shutdown()
+				return nil
+			case event.ResizeKind:
+				w, h2 = ev.Width, ev.Height
+				rt.MarkDirty()
+			case event.KeyKind:
+				if opts.QuitOnCtrlC && ev.Key.IsCtrlC() {
+					shutdown()
+					return nil
+				}
+				rt.HandleEvent(ev)
+			case event.MouseKind:
+				rt.HandleEvent(ev)
+			}
 		}
 
 		if rt.IsDirty() {

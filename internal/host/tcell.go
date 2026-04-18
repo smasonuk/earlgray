@@ -130,6 +130,15 @@ func (h *TcellHost) SetCell(x, y int, ch rune, style screen.CellStyle) {
 	if style.Underline {
 		tcellStyle = tcellStyle.Underline(true)
 	}
+	if style.Faint {
+		tcellStyle = tcellStyle.Dim(true)
+	}
+	if style.Strikethrough {
+		tcellStyle = tcellStyle.StrikeThrough(true)
+	}
+	if style.Reverse {
+		tcellStyle = tcellStyle.Reverse(true)
+	}
 	h.s.SetContent(x, y, ch, nil, tcellStyle)
 }
 

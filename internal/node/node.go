@@ -12,6 +12,7 @@ type Kind int
 const (
 	ViewKind      Kind = iota // a container with style and children
 	TextKind                  // a leaf node with text content
+	RichTextKind              // a leaf node with multiple styled text spans
 	KeyedKind                 // wraps another node with an explicit key
 	ComponentKind             // a function component
 	OverlayKind               // stacks children on top of each other
@@ -33,6 +34,9 @@ type KeyPress = input.KeyPress
 // KeyHandler processes a key press. Returns true if the event was consumed.
 type KeyHandler func(KeyPress) bool
 
+// KeyCaptureHandler processes a key press during the capture phase.
+type KeyCaptureHandler func(KeyPress) bool
+
 // MouseHandler processes a mouse event. Returns true if the event was consumed.
 type MouseHandler func(input.MousePress) bool
 
@@ -42,10 +46,20 @@ type TextOptions struct {
 	Style style.Style
 }
 
+// TextSpan is a styled segment in a RichText node.
+type TextSpan struct {
+	Text  string
+	Style style.Style
+}
+
 // TextPanelOptions holds options for scrollable text panels.
 type TextPanelOptions struct {
-	WordWrap      bool
-	ShowScrollbar bool
+	WordWrap         bool
+	ShowScrollbar    bool
+	AutoScrollBottom bool
+	ResetScrollKey   string
+	InitialScrollX   int
+	InitialScrollY   int
 }
 
 // Node is the internal concrete node type.
@@ -55,15 +69,17 @@ type Node struct {
 	Style         style.Style      // style (ViewKind)
 	Children      []*Node          // child nodes (ViewKind, KeyedKind)
 	Text          string           // text content (TextKind)
+	Spans         []TextSpan       // rich text spans (RichTextKind)
 	TextOpts      TextOptions      // text options (TextKind)
 	TextPanelOpts TextPanelOptions // text panel options (TextPanelKind)
 	CompFn        func() *Node     // component render function (ComponentKind)
 	CompID        uintptr          // identity of component function (for reconciliation)
 	OnKey         KeyHandler       // optional key handler (ViewKind)
-	OnMouse       MouseHandler     // optional mouse handler (ViewKind)
-	Focusable     bool             // whether this node can receive focus
-	AutoFocus     bool             // request focus on initial mount if no other node is focused
-	Disabled      bool             // skip in focus traversal and key delivery
+	OnKeyCapture  KeyCaptureHandler
+	OnMouse       MouseHandler // optional mouse handler (ViewKind)
+	Focusable     bool         // whether this node can receive focus
+	AutoFocus     bool         // request focus on initial mount if no other node is focused
+	Disabled      bool         // skip in focus traversal and key delivery
 
 	// FocusScope traps focus traversal within this view's subtree.
 	FocusScope bool

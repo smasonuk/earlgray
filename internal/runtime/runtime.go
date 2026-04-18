@@ -48,8 +48,10 @@ type Instance struct {
 	// Scroll state for scrollable nodes such as TextPanelKind.
 	// scrollY is measured in visual lines after wrapping.
 	// scrollX is measured in terminal cells and is only used when word wrap is disabled.
-	scrollX int
-	scrollY int
+	scrollX            int
+	scrollY            int
+	textPanelResetKey  string
+	textPanelScrollSet bool
 }
 
 // cursorState holds the cursor position requested by the most recently rendered
@@ -156,7 +158,7 @@ func buildSyntheticNode(inst *Instance) *node.Node {
 			synth.Children[i] = buildSyntheticNode(child)
 		}
 		return &synth
-	default: // TextKind, TextPanelKind
+	default: // TextKind, RichTextKind, TextPanelKind
 		return inst.nd
 	}
 }
@@ -215,9 +217,18 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 	// Deliver to focused node, then bubble up the parent chain.
 	if r.focused != nil {
 		press := input.KeyPress{
-			Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune),
+			Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune, ev.Key.Mod),
 			Rune: ev.Key.Rune,
 			Mod:  normalizeMod(ev.Key.Mod),
+		}
+
+		root := activeFocusRoot(r.root)
+		for _, inst := range focusedPath(root, r.focused) {
+			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKeyCapture != nil {
+				if inst.nd.OnKeyCapture(press) {
+					return true
+				}
+			}
 		}
 
 		if r.focused.nd != nil &&
@@ -228,7 +239,6 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			return true
 		}
 
-		root := activeFocusRoot(r.root)
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
@@ -243,7 +253,11 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 	}
 
 	// No focused node: fall back to depth-first delivery within the active focus scope.
-	return deliverKey(activeFocusRoot(r.root), ev.Key)
+	root := activeFocusRoot(r.root)
+	if deliverKeyCapture(root, ev.Key) {
+		return true
+	}
+	return deliverKey(root, ev.Key)
 }
 
 // handleMouse dispatches a mouse event: hit-tests, focuses clicked nodes,
@@ -367,13 +381,54 @@ func deliverKey(inst *Instance, key event.Key) bool {
 	}
 	if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 		press := input.KeyPress{
-			Key:  event.NormalizeKey(key.Key, key.Rune),
+			Key:  event.NormalizeKey(key.Key, key.Rune, key.Mod),
 			Rune: key.Rune,
 			Mod:  normalizeMod(key.Mod),
 		}
 		return inst.nd.OnKey(press)
 	}
 	return false
+}
+
+func deliverKeyCapture(inst *Instance, key event.Key) bool {
+	if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKeyCapture != nil {
+		press := input.KeyPress{
+			Key:  event.NormalizeKey(key.Key, key.Rune, key.Mod),
+			Rune: key.Rune,
+			Mod:  normalizeMod(key.Mod),
+		}
+		if inst.nd.OnKeyCapture(press) {
+			return true
+		}
+	}
+	for _, child := range inst.children {
+		if deliverKeyCapture(child, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func focusedPath(root, focused *Instance) []*Instance {
+	if root == nil || focused == nil {
+		return nil
+	}
+
+	var path []*Instance
+	for inst := focused; inst != nil; inst = inst.parent {
+		path = append(path, inst)
+		if inst == root {
+			break
+		}
+	}
+	if len(path) == 0 || path[len(path)-1] != root {
+		return nil
+	}
+
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+	return path
 }
 
 // collectFocusable returns all focusable instances in depth-first order.
@@ -582,6 +637,10 @@ func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
 		key:     n.Key,
 	}
 
+	if n.Kind == node.TextPanelKind {
+		resetTextPanelState(inst)
+	}
+
 	// For component nodes, render the component and mount its output.
 	if n.Kind == node.ComponentKind {
 		inst.compID = n.CompID
@@ -615,6 +674,10 @@ func reconcile(rt *Runtime, parent *Instance, inst *Instance, n *node.Node) *Ins
 	inst.nd = n
 	inst.kind = n.Kind
 	inst.key = n.Key
+
+	if n.Kind == node.TextPanelKind {
+		applyTextPanelReset(inst)
+	}
 
 	switch n.Kind {
 	case node.ComponentKind:
@@ -734,21 +797,12 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.OverlayKind {
 		s := style.MergeVisual(inherited, inst.nd.Style)
+		fillStyle := screenCellStyleFromStyle(s)
 
 		if inst.nd.Style.Background.IsSpecified() {
-			fillStyle := screen.CellStyle{
-				Fg: s.Foreground,
-				Bg: s.Background,
-			}
 			buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
 		}
-
-		borderStyle := screen.CellStyle{
-			Fg:   s.Foreground,
-			Bg:   s.Background,
-			Bold: s.Bold,
-		}
-		drawBorders(buf, r, s.Border, borderStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
 
 		for _, child := range inst.children {
 			renderInstance(child, buf, s, cursor)
@@ -758,19 +812,9 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.TextPanelKind {
 		s := style.MergeVisual(inherited, inst.nd.Style)
-
-		fillStyle := screen.CellStyle{
-			Fg: s.Foreground,
-			Bg: s.Background,
-		}
+		fillStyle := screenCellStyleFromStyle(s)
 		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
-
-		borderStyle := screen.CellStyle{
-			Fg:   s.Foreground,
-			Bg:   s.Background,
-			Bold: s.Bold,
-		}
-		drawBorders(buf, r, s.Border, borderStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
 
 		renderTextPanel(inst, buf, content, s)
 		return
@@ -778,19 +822,9 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.ViewKind {
 		s := style.MergeVisual(inherited, inst.nd.Style)
-
-		fillStyle := screen.CellStyle{
-			Fg: s.Foreground,
-			Bg: s.Background,
-		}
+		fillStyle := screenCellStyleFromStyle(s)
 		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
-
-		borderStyle := screen.CellStyle{
-			Fg:   s.Foreground,
-			Bg:   s.Background,
-			Bold: s.Bold,
-		}
-		drawBorders(buf, r, s.Border, borderStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
 
 		if inst.nd.CursorVisible && cursor != nil && content.W > 0 && content.H > 0 {
 			cx := inst.nd.CursorX
@@ -821,14 +855,15 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	if inst.nd.Kind == node.TextKind {
 		opts := inst.nd.TextOpts
 		s := style.MergeVisual(inherited, opts.Style)
-		textStyle := screen.CellStyle{
-			Fg:        s.Foreground,
-			Bg:        s.Background,
-			Bold:      s.Bold,
-			Italic:    s.Italic,
-			Underline: s.Underline,
-		}
+		textStyle := screenCellStyleFromStyle(s)
 		drawMultilineText(buf, content, inst.nd.Text, textStyle, opts.Align)
+		return
+	}
+
+	if inst.nd.Kind == node.RichTextKind {
+		opts := inst.nd.TextOpts
+		baseStyle := style.MergeVisual(inherited, opts.Style)
+		drawRichText(buf, content, inst.nd.Spans, baseStyle, opts.Align)
 		return
 	}
 
@@ -838,9 +873,21 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	}
 }
 
-// alignedX computes the starting x for a single line of text given alignment.
-func alignedX(rect style.Rect, line string, align node.TextAlign) int {
-	width := runewidth.StringWidth(line)
+func screenCellStyleFromStyle(s style.Style) screen.CellStyle {
+	return screen.CellStyle{
+		Fg:            s.Foreground,
+		Bg:            s.Background,
+		Bold:          s.Bold,
+		Italic:        s.Italic,
+		Underline:     s.Underline,
+		Faint:         s.Faint,
+		Strikethrough: s.Strikethrough,
+		Reverse:       s.Reverse,
+	}
+}
+
+// alignedXByWidth computes the starting x for a single line given alignment.
+func alignedXByWidth(rect style.Rect, width int, align node.TextAlign) int {
 	if width > rect.W {
 		width = rect.W
 	}
@@ -854,6 +901,11 @@ func alignedX(rect style.Rect, line string, align node.TextAlign) int {
 	}
 }
 
+// alignedX computes the starting x for a single line of text given alignment.
+func alignedX(rect style.Rect, line string, align node.TextAlign) int {
+	return alignedXByWidth(rect, runewidth.StringWidth(line), align)
+}
+
 // drawMultilineText renders text split by newlines with alignment support.
 func drawMultilineText(buf *screen.Buffer, rect style.Rect, text string, st screen.CellStyle, align node.TextAlign) {
 	lines := strings.Split(text, "\n")
@@ -864,6 +916,21 @@ func drawMultilineText(buf *screen.Buffer, rect style.Rect, text string, st scre
 		x := alignedX(rect, line, align)
 		y := rect.Y + i
 		buf.DrawTextClipped(x, y, line, st, rect.X, rect.Y, rect.W, rect.H)
+	}
+}
+
+func drawRichText(buf *screen.Buffer, rect style.Rect, spans []node.TextSpan, base style.Style, align node.TextAlign) {
+	lines := node.SplitTextSpansLines(spans)
+	for i, line := range lines {
+		if i >= rect.H {
+			break
+		}
+		x := alignedXByWidth(rect, node.RichTextLineWidth(line), align)
+		y := rect.Y + i
+		for _, span := range line {
+			spanStyle := screenCellStyleFromStyle(style.MergeVisual(base, span.Style))
+			x = buf.DrawTextClipped(x, y, span.Text, spanStyle, rect.X, rect.Y, rect.W, rect.H)
+		}
 	}
 }
 

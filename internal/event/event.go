@@ -49,7 +49,11 @@ func (k Key) IsCtrlC() bool {
 
 // NormalizeKey converts a tcell key to a shared Key enum value.
 // Returns KeyUnknown for unrecognized keys.
-func NormalizeKey(tcellKey tcell.Key, rune rune) input.Key {
+func NormalizeKey(tcellKey tcell.Key, rune rune, mod tcell.ModMask) input.Key {
+	if (tcellKey == tcell.KeyCtrlC) || ((rune == 'c' || rune == 'C') && mod&tcell.ModCtrl != 0) {
+		return input.KeyCtrlC
+	}
+
 	if rune != 0 && tcellKey != tcell.KeyRune {
 		return input.KeyRune
 	}

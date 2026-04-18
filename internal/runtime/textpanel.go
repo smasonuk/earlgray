@@ -8,6 +8,28 @@ import (
 	"github.com/smason/earlgray/internal/textflow"
 )
 
+func resetTextPanelState(inst *Instance) {
+	if inst == nil || inst.nd == nil || inst.nd.Kind != node.TextPanelKind {
+		return
+	}
+
+	opts := inst.nd.TextPanelOpts
+	inst.textPanelResetKey = opts.ResetScrollKey
+	inst.textPanelScrollSet = true
+	inst.scrollX = opts.InitialScrollX
+	inst.scrollY = opts.InitialScrollY
+}
+
+func applyTextPanelReset(inst *Instance) {
+	if inst == nil || inst.nd == nil || inst.nd.Kind != node.TextPanelKind {
+		return
+	}
+
+	if !inst.textPanelScrollSet || inst.nd.TextPanelOpts.ResetScrollKey != inst.textPanelResetKey {
+		resetTextPanelState(inst)
+	}
+}
+
 func handleTextPanelKey(inst *Instance, press input.KeyPress) bool {
 	if inst == nil || inst.nd == nil || inst.nd.Kind != node.TextPanelKind {
 		return false
@@ -117,8 +139,8 @@ func drawTextPanelScrollbar(buf *screen.Buffer, content style.Rect, totalLines, 
 		thumbTop = (scrollY * (trackH - thumbH)) / maxScroll
 	}
 
-	trackStyle := screen.CellStyle{Fg: s.Foreground, Bg: s.Background}
-	thumbStyle := screen.CellStyle{Fg: s.Foreground, Bg: s.Background}
+	trackStyle := screenCellStyleFromStyle(s)
+	thumbStyle := screenCellStyleFromStyle(s)
 
 	for i := 0; i < trackH; i++ {
 		if i >= thumbTop && i < thumbTop+thumbH {
@@ -153,6 +175,9 @@ func renderTextPanel(inst *Instance, buf *screen.Buffer, content style.Rect, s s
 	if maxY < 0 {
 		maxY = 0
 	}
+	if opts.AutoScrollBottom {
+		inst.scrollY = maxY
+	}
 	inst.scrollY = clampIntRuntime(inst.scrollY, 0, maxY)
 
 	maxX := 0
@@ -164,13 +189,7 @@ func renderTextPanel(inst *Instance, buf *screen.Buffer, content style.Rect, s s
 	}
 	inst.scrollX = clampIntRuntime(inst.scrollX, 0, maxX)
 
-	textStyle := screen.CellStyle{
-		Fg:        s.Foreground,
-		Bg:        s.Background,
-		Bold:      s.Bold,
-		Italic:    s.Italic,
-		Underline: s.Underline,
-	}
+	textStyle := screenCellStyleFromStyle(s)
 
 	for row := 0; row < content.H; row++ {
 		lineIdx := inst.scrollY + row
