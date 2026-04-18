@@ -197,3 +197,16 @@ func TestDrawWideCharacterNotPartiallyClipped(t *testing.T) {
 		t.Errorf("pos 1: expected space, got %q", b.At(1, 0).Rune)
 	}
 }
+
+func TestDrawWideCharacterStartingBeforeClipIsNotPartiallyDrawn(t *testing.T) {
+	b := NewBuffer(5, 1)
+
+	b.DrawTextClipped(-1, 0, "界A", CellStyle{}, 0, 0, 5, 1)
+
+	if b.At(0, 0).Rune == '界' {
+		t.Fatal("wide character starting before clip should not be partially drawn")
+	}
+	if b.At(1, 0).Rune != 'A' {
+		t.Fatalf("expected A at x=1, got %q", b.At(1, 0).Rune)
+	}
+}

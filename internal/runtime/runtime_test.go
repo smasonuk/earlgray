@@ -159,6 +159,39 @@ func TestUseStatePreserved(t *testing.T) {
 	}
 }
 
+func TestUseStatePanicsOutsideRender(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic calling UseState outside render")
+		}
+	}()
+	UseState(0)
+}
+
+func TestConditionalHookCausesTypeMismatchPanic(t *testing.T) {
+	rt := New()
+	condition := true
+	compFn := func() *node.Node {
+		if condition {
+			UseState(0)
+		} else {
+			UseState("string")
+		}
+		return textND("foo")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1}
+	rt.Update(n)
+
+	condition = false
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on type mismatch for conditional hook")
+		}
+	}()
+	rt.Update(n)
+}
+
 func focusableND(children ...*node.Node) *node.Node {
 	return &node.Node{Kind: node.ViewKind, Focusable: true, Children: children}
 }
@@ -831,6 +864,35 @@ func TestTopmostFocusScopeWins(t *testing.T) {
 	}
 }
 
+func TestDeepestFocusScopeWinsEvenIfSiblingIsFocused(t *testing.T) {
+	rt := New()
+
+	f1 := focusableND()
+	scope1 := focusScopeND(f1)
+
+	f2 := focusableND()
+	scope2 := focusScopeND(f2)
+
+	// scope2 comes after scope1, so it wins findTopmostFocusScope.
+	root := viewND(scope1, scope2)
+	rt.Update(root)
+
+	// Initially focus should be in scope2 because it is later in the tree.
+	if rt.focused != rt.root.children[1].children[0] {
+		t.Errorf("expected focus in scope2, got %v", rt.focused)
+	}
+
+	// Manually focus f1 in scope1.
+	rt.focused = rt.root.children[0].children[0]
+
+	// Now if we tab, it should wrap within scope2, because scope2 is the active focus root.
+	// f1 is not in collectFocusable(scope2), so focusNext resets it to focusable[0] of scope2.
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyTab}})
+	if rt.focused != rt.root.children[1].children[0] {
+		t.Errorf("expected focus to jump to scope2 on tab, got %v", rt.focused)
+	}
+}
+
 func TestDuplicateKeysDoNotReuseSameInstanceTwice(t *testing.T) {
 	rt := New()
 
@@ -863,5 +925,37 @@ func TestDuplicateKeysDoNotReuseSameInstanceTwice(t *testing.T) {
 	}
 	if second == instA {
 		t.Errorf("second child should NOT be instA (duplicate key)")
+	}
+}
+
+func TestRunLayoutComponentRootFlexGrowParticipatesInParentLayout(t *testing.T) {
+	compFn := func() *node.Node {
+		return &node.Node{
+			Kind:  node.ViewKind,
+			Style: style.Style{FlexGrow: 1},
+		}
+	}
+
+	root := &node.Node{
+		Kind:  node.ViewKind,
+		Style: style.Style{Direction: style.Row},
+		Children: []*node.Node{
+			{Kind: node.ComponentKind, CompFn: compFn, CompID: 123},
+			{Kind: node.ViewKind, Style: style.Style{Width: style.Cells(10)}},
+		},
+	}
+
+	rt := New()
+	rt.Update(root)
+	rt.RunLayout(80, 24)
+
+	first := rt.root.children[0].layout.Rect
+	second := rt.root.children[1].layout.Rect
+
+	if first.W != 70 {
+		t.Fatalf("component layout width = %d, want 70", first.W)
+	}
+	if second.X != 70 {
+		t.Fatalf("fixed sibling X = %d, want 70", second.X)
 	}
 }

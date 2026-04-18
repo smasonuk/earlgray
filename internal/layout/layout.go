@@ -166,6 +166,13 @@ func styledBoxResult(s style.Style, c Constraints, ox, oy int) Result {
 	}
 }
 
+func layoutStyle(nd *node.Node) style.Style {
+	for (nd.Kind == node.ComponentKind || nd.Kind == node.KeyedKind) && len(nd.Children) == 1 {
+		nd = nd.Children[0]
+	}
+	return nd.Style
+}
+
 // layoutChildren performs flex layout of children within the content rect.
 func layoutChildren(children []*node.Node, content style.Rect, s style.Style) []*Tree {
 	dir := s.Direction
@@ -177,7 +184,7 @@ func layoutChildren(children []*node.Node, content style.Rect, s style.Style) []
 	totalGrow := 0
 
 	for i, child := range children {
-		cs := child.Style
+		cs := layoutStyle(child)
 		info := childInfo{nd: child, flexGrow: cs.FlexGrow}
 
 		var mainDim, crossDim style.Dimension

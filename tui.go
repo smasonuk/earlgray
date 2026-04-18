@@ -302,6 +302,61 @@ func Button(props ButtonProps) Node {
 	})
 }
 
+// CheckboxProps configures a Checkbox widget.
+type CheckboxProps struct {
+	Label    string
+	Value    bool
+	OnChange func(bool)
+
+	// Style is the base style for the checkbox's focusable view.
+	Style Style
+
+	// FocusedStyle overlays only visual attributes when the checkbox is focused.
+	FocusedStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+// Checkbox creates a focusable checkbox that responds to Space and Enter.
+func Checkbox(props CheckboxProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		s := props.Style
+		if focused {
+			s = overlayVisualStyle(props.Style, props.FocusedStyle)
+		}
+
+		mark := "[ ]"
+		if props.Value {
+			mark = "[x]"
+		}
+
+		return ViewWith(
+			ViewProps{
+				Style:     s,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
+				OnKey: func(ev KeyEvent) bool {
+					if props.Disabled {
+						return false
+					}
+					if ev.Key == KeyEnter || (ev.Key == KeyRune && ev.Rune == ' ') {
+						if props.OnChange != nil {
+							props.OnChange(!props.Value)
+						}
+						return true
+					}
+					return false
+				},
+			},
+			Text(mark+" "+props.Label, WithTextStyle(Style{FlexGrow: 1})),
+		)
+	})
+}
+
 // DialogProps configures a Dialog widget.
 type DialogProps struct {
 	Style         Style
@@ -566,6 +621,74 @@ func TextInput(props TextInputProps) Node {
 		}
 
 		return nd
+	})
+}
+
+// ListProps configures a List widget.
+type ListProps struct {
+	Items         []string
+	SelectedIndex int
+	OnSelect      func(int)
+
+	Style        Style
+	FocusedStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+// List creates a focusable vertical list where items are navigated with Up/Down keys.
+// It is a controlled component: the parent must manage SelectedIndex and OnSelect.
+func List(props ListProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		items := make([]Node, len(props.Items))
+		for i, label := range props.Items {
+			prefix := "  "
+			if i == props.SelectedIndex {
+				prefix = "> "
+			}
+
+			itemStyle := Style{}
+			if focused && i == props.SelectedIndex {
+				itemStyle = overlayVisualStyle(Style{}, props.FocusedStyle)
+			}
+
+			items[i] = View(itemStyle, Text(prefix+label))
+		}
+
+		return ViewWith(
+			ViewProps{
+				Style:     props.Style,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
+				OnKey: func(ev KeyEvent) bool {
+					if props.Disabled {
+						return false
+					}
+					switch ev.Key {
+					case KeyUp:
+						if props.SelectedIndex > 0 {
+							if props.OnSelect != nil {
+								props.OnSelect(props.SelectedIndex - 1)
+							}
+							return true
+						}
+					case KeyDown:
+						if props.SelectedIndex < len(props.Items)-1 {
+							if props.OnSelect != nil {
+								props.OnSelect(props.SelectedIndex + 1)
+							}
+							return true
+						}
+					}
+					return false
+				},
+			},
+			items...,
+		)
 	})
 }
 

@@ -104,18 +104,23 @@ func (b *Buffer) DrawTextClipped(x, y int, text string, style CellStyle, clipX, 
 			// combining character, skip for simplicity
 			continue
 		}
+
+		runeStart := col
+		runeEnd := col + w
+
 		// Don't draw partial wide characters at clip boundary
-		if col+w > clipRight {
+		if runeEnd > clipRight {
 			break
 		}
-		if col >= clipX {
-			b.SetCell(col, y, r, style)
+
+		if runeStart >= clipX && runeEnd <= clipRight {
+			b.SetCell(runeStart, y, r, style)
 			// For wide characters, fill the next cell with a space
 			if w > 1 {
-				b.SetCell(col+1, y, ' ', style)
+				b.SetCell(runeStart+1, y, ' ', style)
 			}
 		}
-		col += w
+		col = runeEnd
 	}
 	return col
 }

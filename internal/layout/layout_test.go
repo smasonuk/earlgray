@@ -471,3 +471,85 @@ func TestOverlayIntrinsicMeasurementIncludesPaddingAndBorder(t *testing.T) {
 		t.Fatalf("overlay measured rect = %+v, want 7x5", got)
 	}
 }
+
+func TestComponentRenderedFlexGrowParticipatesInParentRow(t *testing.T) {
+	componentChild := &node.Node{
+		Kind: node.ComponentKind,
+		Children: []*node.Node{
+			viewNode(style.Style{FlexGrow: 1}),
+		},
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Row},
+		componentChild,
+		viewNode(style.Style{Width: style.Cells(10)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	first := tree.Children[0].Result.Rect
+	second := tree.Children[1].Result.Rect
+
+	if first.W != 70 {
+		t.Fatalf("component flex child width = %d, want 70", first.W)
+	}
+	if second.X != 70 {
+		t.Fatalf("fixed sibling X = %d, want 70", second.X)
+	}
+}
+
+func TestKeyedChildFlexGrowParticipatesInParentRow(t *testing.T) {
+	keyedChild := &node.Node{
+		Kind: node.KeyedKind,
+		Key:  "main",
+		Children: []*node.Node{
+			viewNode(style.Style{FlexGrow: 1}),
+		},
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Row},
+		keyedChild,
+		viewNode(style.Style{Width: style.Cells(10)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	first := tree.Children[0].Result.Rect
+	second := tree.Children[1].Result.Rect
+
+	if first.W != 70 {
+		t.Fatalf("keyed flex child width = %d, want 70", first.W)
+	}
+	if second.X != 70 {
+		t.Fatalf("fixed sibling X = %d, want 70", second.X)
+	}
+}
+
+func TestComponentRenderedFlexGrowParticipatesInParentColumn(t *testing.T) {
+	componentChild := &node.Node{
+		Kind: node.ComponentKind,
+		Children: []*node.Node{
+			viewNode(style.Style{FlexGrow: 1}),
+		},
+	}
+
+	parent := viewNode(
+		style.Style{Direction: style.Column},
+		componentChild,
+		viewNode(style.Style{Height: style.Cells(4)}),
+	)
+
+	tree := Layout(parent, exactC(80, 24))
+
+	first := tree.Children[0].Result.Rect
+	second := tree.Children[1].Result.Rect
+
+	if first.H != 20 {
+		t.Fatalf("component flex child height = %d, want 20", first.H)
+	}
+	if second.Y != 20 {
+		t.Fatalf("fixed sibling Y = %d, want 20", second.Y)
+	}
+}
