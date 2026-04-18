@@ -134,10 +134,13 @@ func SettingsPageRoot(router tui.Router) func() tui.Node {
 			),
 			// Checkbox
 			tui.Keyed("enabled-check", tui.Checkbox(tui.CheckboxProps{
-				Label:        "Enable feature",
-				Value:        enabled,
-				OnChange:     setEnabled,
-				FocusedStyle: tui.Style{Bold: true},
+				Label:    "Enable feature",
+				Value:    enabled,
+				OnChange: setEnabled,
+				FocusedStyle: tui.Style{
+					Foreground: tui.ANSIColor(0),
+					Background: tui.ANSIColor(7),
+				},
 			})),
 			// Select
 			tui.View(tui.Style{Direction: tui.Row, Gap: 1},
@@ -148,10 +151,13 @@ func SettingsPageRoot(router tui.Router) func() tui.Node {
 						{Label: "Dark", Value: "dark"},
 						{Label: "System", Value: "system"},
 					},
-					Value:        theme,
-					OnChange:     setTheme,
-					Style:        tui.Style{Width: tui.Cells(14)},
-					FocusedStyle: tui.Style{Foreground: tui.ANSIColor(4)},
+					Value:    theme,
+					OnChange: setTheme,
+					Style:    tui.Style{Width: tui.Cells(14)},
+					FocusedStyle: tui.Style{
+						Foreground: tui.ANSIColor(0),
+						Background: tui.ANSIColor(7),
+					},
 				})),
 			),
 			// List
@@ -160,7 +166,7 @@ func SettingsPageRoot(router tui.Router) func() tui.Node {
 				Items:         []string{"Alpha", "Beta", "Gamma", "Delta"},
 				SelectedIndex: selectedItem,
 				OnSelect:      setSelectedItem,
-				Style:         tui.Style{Height: tui.Cells(4), Border: tui.BorderAll},
+				Style:         tui.Style{Height: tui.Cells(6), Border: tui.BorderAll},
 				FocusedStyle:  tui.Style{Foreground: tui.ANSIColor(6)},
 			})),
 			// TextPanel with scrollable help text
@@ -176,9 +182,14 @@ func SettingsPageRoot(router tui.Router) func() tui.Node {
 				name, enabled, theme, selectedItem)),
 			// Back button
 			tui.Keyed("back-btn", tui.Button(tui.ButtonProps{
-				Label:        "[ Back ]",
-				FocusedStyle: tui.Style{Bold: true},
-				OnPress:      func() { router.Back() },
+				Label: "[ Back ]",
+				Style: tui.Style{Width: tui.Cells(10), Height: tui.Cells(1)},
+				FocusedStyle: tui.Style{
+					Foreground: tui.ANSIColor(0),
+					Background: tui.ANSIColor(7),
+					Bold:       true,
+				},
+				OnPress: func() { router.Back() },
 			})),
 		)
 	}
@@ -199,9 +210,9 @@ func DialogContent(setDialogOpen func(bool), setLastSubmit func(string)) tui.Nod
 			},
 			tui.Text("Enter a value (Esc to close):"),
 			tui.Keyed("dialog-input", tui.TextInput(tui.TextInputProps{
-				Value:        val,
-				AutoFocus:    true,
-				OnChange:     setVal,
+				Value:     val,
+				AutoFocus: true,
+				OnChange:  setVal,
 				OnSubmit: func(s string) {
 					setLastSubmit(s)
 					setDialogOpen(false)

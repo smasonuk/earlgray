@@ -255,11 +255,12 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 
 	consumed := false
 
-	// Left click: focus the hit node if it is focusable.
+	// Left click: focus the nearest focusable ancestor of the hit node.
+	// hitTest returns the deepest node (often a Text leaf); walking up finds the widget.
 	if m.Button&input.MouseLeft != 0 {
-		if hit.nd != nil && hit.nd.Focusable && !hit.nd.Disabled {
-			if r.focused != hit {
-				r.focused = hit
+		if target := nearestFocusableAncestor(hit, focusRoot); target != nil {
+			if r.focused != target {
+				r.focused = target
 				r.dirty = true
 				consumed = true
 			}
@@ -308,6 +309,20 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 	}
 
 	return consumed
+}
+
+// nearestFocusableAncestor walks from hit toward stop, returning the first
+// focusable, non-disabled instance. Returns nil if none is found.
+func nearestFocusableAncestor(hit, stop *Instance) *Instance {
+	for inst := hit; inst != nil; inst = inst.parent {
+		if inst.nd != nil && inst.nd.Focusable && !inst.nd.Disabled {
+			return inst
+		}
+		if inst == stop {
+			break
+		}
+	}
+	return nil
 }
 
 // hitTest returns the deepest instance whose layout rect contains (x, y),

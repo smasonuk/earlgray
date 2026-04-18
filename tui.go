@@ -373,6 +373,13 @@ func Checkbox(props CheckboxProps) Node {
 					}
 					return false
 				},
+				OnMouse: func(ev MouseEvent) bool {
+					if ev.Button&MouseLeft == 0 || props.Disabled || props.OnChange == nil {
+						return false
+					}
+					props.OnChange(!props.Value)
+					return true
+				},
 			},
 			Text(mark+" "+props.Label, WithTextStyle(Style{FlexGrow: 1})),
 		)
@@ -681,7 +688,20 @@ func List(props ListProps) Node {
 				itemStyle = overlayVisualStyle(Style{}, props.FocusedStyle)
 			}
 
-			items[i] = View(itemStyle, Text(prefix+label))
+			idx := i
+			items[i] = ViewWith(
+				ViewProps{
+					Style: itemStyle,
+					OnMouse: func(ev MouseEvent) bool {
+						if ev.Button&MouseLeft == 0 || props.Disabled || props.OnSelect == nil {
+							return false
+						}
+						props.OnSelect(idx)
+						return true
+					},
+				},
+				Text(prefix+label),
+			)
 		}
 
 		return ViewWith(
@@ -757,21 +777,6 @@ func RadioGroup(props RadioGroupProps) Node {
 
 		selected := radioSelectedIndex(props.Options, props.Value)
 
-		items := make([]Node, len(props.Options))
-		for i, opt := range props.Options {
-			mark := "( )"
-			if i == selected {
-				mark = "(*)"
-			}
-
-			itemStyle := Style{}
-			if focused && i == selected {
-				itemStyle = overlayVisualStyle(Style{}, props.FocusedStyle)
-			}
-
-			items[i] = View(itemStyle, Text(mark+" "+opt.Label))
-		}
-
 		selectIndex := func(i int) bool {
 			if i < 0 || i >= len(props.Options) {
 				return false
@@ -785,6 +790,33 @@ func RadioGroup(props RadioGroupProps) Node {
 			}
 			props.OnChange(next)
 			return true
+		}
+
+		items := make([]Node, len(props.Options))
+		for i, opt := range props.Options {
+			mark := "( )"
+			if i == selected {
+				mark = "(*)"
+			}
+
+			itemStyle := Style{}
+			if focused && i == selected {
+				itemStyle = overlayVisualStyle(Style{}, props.FocusedStyle)
+			}
+
+			idx := i
+			items[i] = ViewWith(
+				ViewProps{
+					Style: itemStyle,
+					OnMouse: func(ev MouseEvent) bool {
+						if ev.Button&MouseLeft == 0 || props.Disabled {
+							return false
+						}
+						return selectIndex(idx)
+					},
+				},
+				Text(mark+" "+opt.Label),
+			)
 		}
 
 		return ViewWith(
@@ -956,6 +988,12 @@ func Select(props SelectProps) Node {
 					}
 
 					return false
+				},
+				OnMouse: func(ev MouseEvent) bool {
+					if ev.Button&MouseLeft == 0 || props.Disabled || len(props.Options) == 0 || props.OnChange == nil {
+						return false
+					}
+					return selectIndex(nextIndex())
 				},
 			},
 			Text(" < "+display+" > ", WithTextStyle(Style{FlexGrow: 1})),
