@@ -2,6 +2,7 @@ package tui
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/smason/earlgray/internal/event"
@@ -309,9 +310,8 @@ func TestTextInputBackspaceRemovesOneRune(t *testing.T) {
 	if got != "a" {
 		t.Errorf("backspace should remove one rune, got %q want %q", got, "a")
 	}
-	// Verify it's valid UTF-8, not byte-truncated
-	if got != "a" {
-		t.Errorf("expected valid UTF-8 %q, got %q", "a", got)
+	if !utf8.ValidString(got) {
+		t.Fatalf("backspace result is not valid UTF-8: %q", got)
 	}
 }
 

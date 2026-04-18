@@ -97,10 +97,7 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 
 	// Overlay node.
 	if nd.Kind == node.OverlayKind {
-		result := Result{
-			Rect:    style.Rect{X: ox, Y: oy, W: c.MaxW, H: c.MaxH},
-			Content: style.Rect{X: ox, Y: oy, W: c.MaxW, H: c.MaxH},
-		}
+		result := styledBoxResult(nd.Style, c, ox, oy)
 		tree := &Tree{Result: result}
 		if len(nd.Children) == 0 {
 			return tree
@@ -120,7 +117,19 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 
 	// View node.
 	s := nd.Style
+	result := styledBoxResult(s, c, ox, oy)
 
+	tree := &Tree{Result: result}
+
+	if len(nd.Children) == 0 {
+		return tree
+	}
+
+	tree.Children = layoutChildren(nd.Children, result.Content, s)
+	return tree
+}
+
+func styledBoxResult(s style.Style, c Constraints, ox, oy int) Result {
 	w := resolveConstrainedDim(s.Width, c.MinW, c.MaxW)
 	h := resolveConstrainedDim(s.Height, c.MinH, c.MaxH)
 
@@ -151,19 +160,10 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 		contentH = 0
 	}
 
-	result := Result{
+	return Result{
 		Rect:    style.Rect{X: ox, Y: oy, W: w, H: h},
 		Content: style.Rect{X: ox + innerIns.Left, Y: oy + innerIns.Top, W: contentW, H: contentH},
 	}
-
-	tree := &Tree{Result: result}
-
-	if len(nd.Children) == 0 {
-		return tree
-	}
-
-	tree.Children = layoutChildren(nd.Children, result.Content, s)
-	return tree
 }
 
 // layoutChildren performs flex layout of children within the content rect.

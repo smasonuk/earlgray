@@ -365,3 +365,31 @@ func TestOverlayChildrenReceiveSameRect(t *testing.T) {
 		t.Errorf("child 1 rect: got %+v, want %+v", tree.Children[1].Result.Rect, want)
 	}
 }
+
+func TestOverlayWithStyleHonorsFixedSizeAndPadding(t *testing.T) {
+	n := &node.Node{
+		Kind: node.OverlayKind,
+		Style: style.Style{
+			Width:   style.Cells(10),
+			Height:  style.Cells(5),
+			Padding: style.All(1),
+		},
+		Children: []*node.Node{
+			viewNode(style.Style{}),
+		},
+	}
+
+	tree := Layout(n, rootC())
+
+	if tree.Result.Rect != (style.Rect{X: 0, Y: 0, W: 10, H: 5}) {
+		t.Fatalf("overlay rect = %+v, want 10x5", tree.Result.Rect)
+	}
+
+	if tree.Result.Content != (style.Rect{X: 1, Y: 1, W: 8, H: 3}) {
+		t.Fatalf("overlay content = %+v, want padded content", tree.Result.Content)
+	}
+
+	if tree.Children[0].Result.Rect != tree.Result.Content {
+		t.Fatalf("overlay child rect = %+v, want %+v", tree.Children[0].Result.Rect, tree.Result.Content)
+	}
+}

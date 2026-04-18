@@ -745,11 +745,9 @@ func TestFocusScopeTrapsTabTraversal(t *testing.T) {
 
 	// Initial focus should be in the focus scope because it's the topmost scope
 	// and we search for focusable nodes within it.
-	// Wait, actually background is focusable too.
-	// activeFocusRoot(root) will return 'scope'.
-	// So focusable nodes are [f1, f2].
-	if rt.focused.nd != f1 {
-		t.Fatalf("expected focus to be first node in scope, got %v", rt.focused)
+	// The active focus root is the scope, so background is excluded.
+	if rt.focused != rt.root.children[1].children[0] {
+		t.Fatalf("expected focus to be first node in scope")
 	}
 
 	rt.focusNext()

@@ -520,8 +520,25 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	content := inst.layout.Content
 
 	if inst.nd.Kind == node.OverlayKind {
+		s := style.Merge(inherited, inst.nd.Style)
+
+		if inst.nd.Style.Background.IsSpecified() {
+			fillStyle := screen.CellStyle{
+				Fg: s.Foreground,
+				Bg: s.Background,
+			}
+			buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
+		}
+
+		borderStyle := screen.CellStyle{
+			Fg:   s.Foreground,
+			Bg:   s.Background,
+			Bold: s.Bold,
+		}
+		drawBorders(buf, r, s.Border, borderStyle)
+
 		for _, child := range inst.children {
-			renderInstance(child, buf, inherited, cursor)
+			renderInstance(child, buf, s, cursor)
 		}
 		return
 	}
