@@ -1575,3 +1575,454 @@ func TestDisabledListDoesNotCallOnSelect(t *testing.T) {
 		t.Fatal("Disabled List should not consume or call OnSelect")
 	}
 }
+
+func TestRadioGroupReturnsComponentNode(t *testing.T) {
+	got := RadioGroup(RadioGroupProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("RadioGroup should return ComponentKind, got %v", got.Kind)
+	}
+}
+
+func TestRadioGroupRendersSelectedOption(t *testing.T) {
+	rt := runtime.New()
+
+	root := RadioGroup(RadioGroupProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "blue",
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(1, 0).Rune; got != ' ' {
+		t.Fatalf("first option should be unselected, marker middle got %q", got)
+	}
+	if got := buf.At(1, 1).Rune; got != '*' {
+		t.Fatalf("second option should be selected, marker middle got %q", got)
+	}
+}
+
+func TestRadioGroupDownCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := RadioGroup(RadioGroupProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		OnChange:  func(next string) { got = next },
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if !consumed {
+		t.Fatal("Down should be consumed")
+	}
+	if got != "blue" {
+		t.Fatalf("OnChange = %q, want blue", got)
+	}
+}
+
+func TestRadioGroupUpCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := RadioGroup(RadioGroupProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "blue",
+		OnChange:  func(next string) { got = next },
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	})
+
+	if !consumed {
+		t.Fatal("Up should be consumed")
+	}
+	if got != "red" {
+		t.Fatalf("OnChange = %q, want red", got)
+	}
+}
+
+func TestRadioGroupMovementAtEdgesReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := RadioGroup(RadioGroupProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		OnChange:  func(string) {},
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	}); consumed {
+		t.Fatal("Up at first option should return false")
+	}
+}
+
+func TestRadioGroupWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := RadioGroup(RadioGroupProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed {
+		t.Fatal("RadioGroup without OnChange should return false")
+	}
+}
+
+func TestDisabledRadioGroupDoesNotCallOnChange(t *testing.T) {
+	called := false
+	rt := runtime.New()
+
+	root := RadioGroup(RadioGroupProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:    "red",
+		Disabled: true,
+		OnChange: func(string) { called = true },
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed || called {
+		t.Fatal("Disabled RadioGroup should not consume or call OnChange")
+	}
+}
+
+func TestRadioGroupControlledUpdateRendersNewSelection(t *testing.T) {
+	rt := runtime.New()
+
+	form := func() Node {
+		value, setValue := UseState("red")
+		return RadioGroup(RadioGroupProps{
+			Options: []RadioOption{
+				{Label: "Red", Value: "red"},
+				{Label: "Blue", Value: "blue"},
+			},
+			Value:    value,
+			OnChange: setValue,
+		})
+	}
+
+	root := Component(form)
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+	updateUntilClean(rt, root)
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(1, 0).Rune; got != ' ' {
+		t.Fatalf("first option marker = %q, want space", got)
+	}
+	if got := buf.At(1, 1).Rune; got != '*' {
+		t.Fatalf("second option marker = %q, want *", got)
+	}
+}
+
+func TestSelectRendersValue(t *testing.T) {
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value: "blue",
+	})
+
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	// Expected: " < Blue > "
+	found := false
+	for x := 0; x < 20; x++ {
+		if buf.At(x, 0).Rune == 'B' && buf.At(x+1, 0).Rune == 'l' && buf.At(x+2, 0).Rune == 'u' && buf.At(x+3, 0).Rune == 'e' {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("Select should render selected option label")
+	}
+}
+
+func TestSelectNextCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+			{Label: "Green", Value: "green"},
+		},
+		Value:     "blue",
+		OnChange:  func(next string) { got = next },
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRight},
+	})
+
+	if !consumed {
+		t.Fatal("Right should be consumed")
+	}
+	if got != "green" {
+		t.Fatalf("Right: OnChange = %q, want green", got)
+	}
+}
+
+func TestSelectPrevCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		OnChange:  func(next string) { got = next },
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyLeft},
+	})
+
+	if got != "blue" {
+		t.Fatalf("Left at start should wrap to last: got %q, want blue", got)
+	}
+}
+
+func TestSelectHomeEndCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+			{Label: "Green", Value: "green"},
+		},
+		Value:     "blue",
+		OnChange:  func(next string) { got = next },
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyHome},
+	})
+	if got != "red" {
+		t.Fatalf("Home: got %q, want red", got)
+	}
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnd},
+	})
+	if got != "green" {
+		t.Fatalf("End: got %q, want green", got)
+	}
+}
+
+func TestSelectReturnsComponentNode(t *testing.T) {
+	got := Select(SelectProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("Select should return ComponentKind, got %v", got.Kind)
+	}
+}
+
+func TestSelectWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRight},
+	})
+
+	if consumed {
+		t.Fatal("Select without OnChange should return false")
+	}
+}
+
+func TestDisabledSelectDoesNotCallOnChange(t *testing.T) {
+	called := false
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:    "red",
+		Disabled: true,
+		OnChange: func(string) { called = true },
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRight},
+	})
+
+	if consumed || called {
+		t.Fatal("Disabled Select should not consume or call OnChange")
+	}
+}
+
+func TestSelectSpaceCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := Select(SelectProps{
+		Options: []RadioOption{
+			{Label: "Red", Value: "red"},
+			{Label: "Blue", Value: "blue"},
+		},
+		Value:     "red",
+		OnChange:  func(next string) { got = next },
+		AutoFocus: true,
+	})
+
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRune, Rune: ' '},
+	})
+
+	if !consumed {
+		t.Fatal("Space should be consumed")
+	}
+	if got != "blue" {
+		t.Fatalf("Space: OnChange = %q, want blue", got)
+	}
+}
+
+func TestSelectControlledUpdateRendersNewValue(t *testing.T) {
+	rt := runtime.New()
+
+	form := func() Node {
+		value, setValue := UseState("red")
+		return Select(SelectProps{
+			Options: []RadioOption{
+				{Label: "Red", Value: "red"},
+				{Label: "Blue", Value: "blue"},
+			},
+			Value:    value,
+			OnChange: setValue,
+		})
+	}
+
+	root := Component(form)
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyRight},
+	})
+	updateUntilClean(rt, root)
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	found := false
+	for x := 0; x < 20; x++ {
+		if buf.At(x, 0).Rune == 'B' &&
+			buf.At(x+1, 0).Rune == 'l' &&
+			buf.At(x+2, 0).Rune == 'u' &&
+			buf.At(x+3, 0).Rune == 'e' {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatal("controlled Select should render updated selected label")
+	}
+}
+

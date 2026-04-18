@@ -698,6 +698,246 @@ func List(props ListProps) Node {
 	})
 }
 
+// RadioOption configures a single RadioGroup option.
+type RadioOption struct {
+	Label string
+	Value string
+}
+
+// RadioGroupProps configures a RadioGroup widget.
+type RadioGroupProps struct {
+	Options []RadioOption
+	Value   string
+	OnChange func(string)
+
+	Style        Style
+	FocusedStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+func radioSelectedIndex(options []RadioOption, value string) int {
+	for i, opt := range options {
+		if opt.Value == value {
+			return i
+		}
+	}
+	return -1
+}
+
+// RadioGroup creates a focusable vertical radio group navigated with Up/Down.
+// It is controlled: it displays Value and calls OnChange with the next option
+// value. The parent must update Value for the visual state to change.
+func RadioGroup(props RadioGroupProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		s := props.Style
+		s.Direction = Column
+
+		selected := radioSelectedIndex(props.Options, props.Value)
+
+		items := make([]Node, len(props.Options))
+		for i, opt := range props.Options {
+			mark := "( )"
+			if i == selected {
+				mark = "(*)"
+			}
+
+			itemStyle := Style{}
+			if focused && i == selected {
+				itemStyle = overlayVisualStyle(Style{}, props.FocusedStyle)
+			}
+
+			items[i] = View(itemStyle, Text(mark+" "+opt.Label))
+		}
+
+		selectIndex := func(i int) bool {
+			if i < 0 || i >= len(props.Options) {
+				return false
+			}
+			if props.OnChange == nil {
+				return false
+			}
+			next := props.Options[i].Value
+			if next == props.Value {
+				return true
+			}
+			props.OnChange(next)
+			return true
+		}
+
+		return ViewWith(
+			ViewProps{
+				Style:     s,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
+				OnKey: func(ev KeyEvent) bool {
+					if props.Disabled || len(props.Options) == 0 {
+						return false
+					}
+
+					switch ev.Key {
+					case KeyUp:
+						if props.OnChange == nil {
+							return false
+						}
+						if selected < 0 {
+							return selectIndex(len(props.Options) - 1)
+						}
+						if selected == 0 {
+							return false
+						}
+						return selectIndex(selected - 1)
+
+					case KeyDown:
+						if props.OnChange == nil {
+							return false
+						}
+						if selected < 0 {
+							return selectIndex(0)
+						}
+						if selected >= len(props.Options)-1 {
+							return false
+						}
+						return selectIndex(selected + 1)
+
+					case KeyHome:
+						if selected == 0 {
+							return false
+						}
+						return selectIndex(0)
+
+					case KeyEnd:
+						if selected == len(props.Options)-1 {
+							return false
+						}
+						return selectIndex(len(props.Options) - 1)
+
+					case KeyEnter:
+						if selected < 0 {
+							return selectIndex(0)
+						}
+						return selectIndex(selected)
+
+					case KeyRune:
+						if ev.Rune == ' ' {
+							if selected < 0 {
+								return selectIndex(0)
+							}
+							return selectIndex(selected)
+						}
+					}
+
+					return false
+				},
+			},
+			items...,
+		)
+	})
+}
+
+// SelectProps configures a Select widget.
+type SelectProps struct {
+	Options []RadioOption
+	Value   string
+	OnChange func(string)
+
+	Style        Style
+	FocusedStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+// Select creates a focusable widget that cycles through options.
+// It is controlled: it displays the label of the option matching Value and calls
+// OnChange with the next option value when pressed or navigated.
+func Select(props SelectProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		s := props.Style
+		if focused {
+			s = overlayVisualStyle(props.Style, props.FocusedStyle)
+		}
+
+		selected := radioSelectedIndex(props.Options, props.Value)
+		display := ""
+		if selected >= 0 {
+			display = props.Options[selected].Label
+		}
+
+		selectIndex := func(i int) bool {
+			if props.OnChange == nil || len(props.Options) == 0 {
+				return false
+			}
+			if i < 0 {
+				i = len(props.Options) - 1
+			}
+			if i >= len(props.Options) {
+				i = 0
+			}
+
+			next := props.Options[i].Value
+			if next == props.Value {
+				return true
+			}
+
+			props.OnChange(next)
+			return true
+		}
+
+		nextIndex := func() int {
+			if selected < 0 {
+				return 0
+			}
+			return selected + 1
+		}
+
+		prevIndex := func() int {
+			if selected < 0 {
+				return len(props.Options) - 1
+			}
+			return selected - 1
+		}
+
+		return ViewWith(
+			ViewProps{
+				Style:     s,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
+				OnKey: func(ev KeyEvent) bool {
+					if props.Disabled || len(props.Options) == 0 || props.OnChange == nil {
+						return false
+					}
+
+					switch ev.Key {
+					case KeyLeft, KeyUp:
+						return selectIndex(prevIndex())
+					case KeyRight, KeyDown, KeyEnter:
+						return selectIndex(nextIndex())
+					case KeyHome:
+						return selectIndex(0)
+					case KeyEnd:
+						return selectIndex(len(props.Options) - 1)
+					case KeyRune:
+						if ev.Rune == ' ' {
+							return selectIndex(nextIndex())
+						}
+					}
+
+					return false
+				},
+			},
+			Text(" < "+display+" > ", WithTextStyle(Style{FlexGrow: 1})),
+		)
+	})
+}
+
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
 // The root function is called on every render to produce the new node tree.
 func Run(root func() Node) error {
