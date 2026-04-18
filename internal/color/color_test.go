@@ -71,6 +71,15 @@ func TestToTcellANSI(t *testing.T) {
 	}
 }
 
+func TestToTcellANSI256(t *testing.T) {
+	c := ANSIColor(200)
+	result := c.ToTcell()
+	expected := tcell.PaletteColor(200)
+	if result != expected {
+		t.Errorf("ANSIColor(200) should convert to PaletteColor(200)")
+	}
+}
+
 func TestToTcellRGB(t *testing.T) {
 	c := RGBColor(100, 150, 200)
 	result := c.ToTcell()

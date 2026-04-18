@@ -28,7 +28,7 @@ func TestTextInputMouseCursorPlacement(t *testing.T) {
 		},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -57,7 +57,7 @@ func TestTextInputMouseCursorPlacementWideRunes(t *testing.T) {
 		},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -87,7 +87,7 @@ func TestListMouseClickFocusAndSelect(t *testing.T) {
 		},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -121,7 +121,7 @@ func TestRadioGroupMouseClickFocusAndSelect(t *testing.T) {
 		},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -149,7 +149,7 @@ func TestTextInputUnfocusedFixedCursorAtStartOnClick(t *testing.T) {
 		{Kind: event.MouseKind, Mouse: event.Mouse{X: 0, Y: 1, Button: MouseLeft}},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 	// With fix: start=0 (unfocused), click at LocalX=0 → cursor=0, CursorX=0.
@@ -177,7 +177,7 @@ func TestTextInputFocusedFixedScrolledCursorOnClick(t *testing.T) {
 		{Kind: event.MouseKind, Mouse: event.Mouse{X: 0, Y: 0, Button: MouseLeft}},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 	if fake.cursorX != 9 {
@@ -206,7 +206,7 @@ func TestDisabledListMouseClick(t *testing.T) {
 		},
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 

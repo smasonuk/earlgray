@@ -86,7 +86,7 @@ type Color = icolor.Color
 // DefaultColor returns the terminal default color.
 func DefaultColor() Color { return icolor.DefaultColor() }
 
-// ANSIColor returns one of the 16 ANSI palette colors (0-15).
+// ANSIColor returns a terminal palette color (0-255).
 func ANSIColor(n int) Color { return icolor.ANSIColor(n) }
 
 // RGBColor returns a 24-bit RGB color.

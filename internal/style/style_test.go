@@ -87,3 +87,23 @@ func TestMergeOtherAttributesPreserved(t *testing.T) {
 		t.Error("child width (unspecified) should remain unspecified")
 	}
 }
+
+func TestMergeVisualInheritsAdditionalAttributes(t *testing.T) {
+	parent := Style{
+		Faint:         true,
+		Strikethrough: true,
+		Reverse:       true,
+	}
+
+	result := MergeVisual(parent, Style{})
+
+	if !result.Faint {
+		t.Error("child should inherit faint")
+	}
+	if !result.Strikethrough {
+		t.Error("child should inherit strikethrough")
+	}
+	if !result.Reverse {
+		t.Error("child should inherit reverse")
+	}
+}

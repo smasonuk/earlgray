@@ -168,6 +168,388 @@ func TestUseStatePanicsOutsideRender(t *testing.T) {
 	UseState(0)
 }
 
+func TestUseStateGuardedDropsStaleQueuedUpdate(t *testing.T) {
+	rt := New()
+	queue := []func(){}
+	rt.SetPost(func(fn func()) {
+		queue = append(queue, fn)
+	})
+
+	allow := true
+	count := 0
+	var setCountGuarded func(int, func() bool)
+
+	compFn := func() *node.Node {
+		c, _, guardedSetter := UseStateGuarded(0)
+		count = c
+		setCountGuarded = guardedSetter
+		return textND("count")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1014}
+	rt.Update(n)
+
+	setCountGuarded(1, func() bool { return allow })
+	allow = false
+
+	if len(queue) != 1 {
+		t.Fatalf("queued updates = %d, want 1", len(queue))
+	}
+
+	queue[0]()
+
+	if rt.IsDirty() {
+		rt.Update(n)
+	}
+
+	if count != 0 {
+		t.Fatalf("count = %d, want 0", count)
+	}
+}
+
+func TestUseEffectPanicsOutsideRender(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic calling UseEffect outside render")
+		}
+	}()
+	UseEffect(func() func() { return nil })
+}
+
+func TestUseEffectDoesNotRunDuringRender(t *testing.T) {
+	rt := New()
+	events := []string{}
+
+	compFn := func() *node.Node {
+		events = append(events, "render")
+		UseEffect(func() func() {
+			events = append(events, "effect")
+			return nil
+		})
+		return textND("hello")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1001}
+	rt.Update(n)
+
+	if len(events) != 1 || events[0] != "render" {
+		t.Fatalf("effect should not run during render, got %v", events)
+	}
+
+	rt.RunEffects()
+
+	want := []string{"render", "effect"}
+	if len(events) != len(want) {
+		t.Fatalf("events len = %d, want %d (%v)", len(events), len(want), events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events[%d] = %q, want %q (%v)", i, events[i], want[i], events)
+		}
+	}
+}
+
+func TestUseEffectRunsOnceOnMount(t *testing.T) {
+	rt := New()
+	effectRuns := 0
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			effectRuns++
+			return nil
+		})
+		return textND("hello")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1002}
+	rt.Update(n)
+	rt.RunEffects()
+	rt.Update(n)
+	rt.RunEffects()
+
+	if effectRuns != 1 {
+		t.Fatalf("effectRuns = %d, want 1", effectRuns)
+	}
+}
+
+func TestUseEffectSameDependencyDoesNotRerun(t *testing.T) {
+	rt := New()
+	effectRuns := 0
+	cleanupRuns := 0
+	dep := "a"
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			effectRuns++
+			return func() {
+				cleanupRuns++
+			}
+		}, dep)
+		return textND(dep)
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1003}
+	rt.Update(n)
+	rt.RunEffects()
+	rt.Update(n)
+	rt.RunEffects()
+
+	if effectRuns != 1 {
+		t.Fatalf("effectRuns = %d, want 1", effectRuns)
+	}
+	if cleanupRuns != 0 {
+		t.Fatalf("cleanupRuns = %d, want 0", cleanupRuns)
+	}
+}
+
+func TestUseEffectChangedDependencyRerunsWithCleanupFirst(t *testing.T) {
+	rt := New()
+	dep := "a"
+	events := []string{}
+
+	compFn := func() *node.Node {
+		currentDep := dep
+		UseEffect(func() func() {
+			events = append(events, "effect "+currentDep)
+			return func() {
+				events = append(events, "cleanup "+currentDep)
+			}
+		}, currentDep)
+		return textND(currentDep)
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1004}
+	rt.Update(n)
+	rt.RunEffects()
+
+	dep = "b"
+	rt.Update(n)
+	rt.RunEffects()
+
+	want := []string{"effect a", "cleanup a", "effect b"}
+	if len(events) != len(want) {
+		t.Fatalf("events len = %d, want %d (%v)", len(events), len(want), events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events[%d] = %q, want %q (%v)", i, events[i], want[i], events)
+		}
+	}
+}
+
+func TestUseEffectCleanupRunsOnUnmount(t *testing.T) {
+	rt := New()
+	cleanupRuns := 0
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupRuns++
+			}
+		})
+		return textND("mounted")
+	}
+
+	n1 := viewND(&node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1005})
+	rt.Update(n1)
+	rt.RunEffects()
+
+	rt.Update(viewND())
+
+	if cleanupRuns != 1 {
+		t.Fatalf("cleanupRuns = %d, want 1", cleanupRuns)
+	}
+}
+
+func TestUseEffectCleanupRunsWhenComponentIdentityChanges(t *testing.T) {
+	rt := New()
+	events := []string{}
+
+	compA := func() *node.Node {
+		UseEffect(func() func() {
+			events = append(events, "effect A")
+			return func() {
+				events = append(events, "cleanup A")
+			}
+		})
+		return textND("A")
+	}
+	compB := func() *node.Node {
+		UseEffect(func() func() {
+			events = append(events, "effect B")
+			return nil
+		})
+		return textND("B")
+	}
+
+	n1 := viewND(&node.Node{Kind: node.ComponentKind, CompFn: compA, CompID: 1006})
+	rt.Update(n1)
+	rt.RunEffects()
+
+	n2 := viewND(&node.Node{Kind: node.ComponentKind, CompFn: compB, CompID: 1007})
+	rt.Update(n2)
+	rt.RunEffects()
+
+	want := []string{"effect A", "cleanup A", "effect B"}
+	if len(events) != len(want) {
+		t.Fatalf("events len = %d, want %d (%v)", len(events), len(want), events)
+	}
+	for i := range want {
+		if events[i] != want[i] {
+			t.Fatalf("events[%d] = %q, want %q (%v)", i, events[i], want[i], events)
+		}
+	}
+}
+
+func TestUseEffectCleanupRunsOnKeyedRemoval(t *testing.T) {
+	rt := New()
+	cleanupA := 0
+	cleanupB := 0
+
+	compA := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupA++
+			}
+		})
+		return textND("A")
+	}
+	compB := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupB++
+			}
+		})
+		return textND("B")
+	}
+
+	n1 := viewND(
+		keyedND("a", &node.Node{Kind: node.ComponentKind, CompFn: compA, CompID: 1008}),
+		keyedND("b", &node.Node{Kind: node.ComponentKind, CompFn: compB, CompID: 1009}),
+	)
+	rt.Update(n1)
+	rt.RunEffects()
+
+	n2 := viewND(
+		keyedND("b", &node.Node{Kind: node.ComponentKind, CompFn: compB, CompID: 1009}),
+	)
+	rt.Update(n2)
+	rt.RunEffects()
+
+	if cleanupA != 1 {
+		t.Fatalf("cleanupA = %d, want 1", cleanupA)
+	}
+	if cleanupB != 0 {
+		t.Fatalf("cleanupB = %d, want 0", cleanupB)
+	}
+}
+
+func TestUseEffectMixedHooksPreserveState(t *testing.T) {
+	rt := New()
+	effectRuns := 0
+	var setCount func(int)
+
+	compFn := func() *node.Node {
+		count, setCountLocal := UseState(0)
+		setCount = setCountLocal
+
+		UseEffect(func() func() {
+			effectRuns++
+			return nil
+		}, count)
+
+		label, _ := UseState("x")
+		return textND(label)
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1010}
+	rt.Update(n)
+	rt.RunEffects()
+
+	setCount(1)
+	rt.Update(n)
+	rt.RunEffects()
+
+	if effectRuns != 2 {
+		t.Fatalf("effectRuns = %d, want 2", effectRuns)
+	}
+	if got := rt.root.children[0].nd.Text; got != "x" {
+		t.Fatalf("label state = %q, want %q", got, "x")
+	}
+}
+
+func TestUseEffectHookOrderMismatchPanics(t *testing.T) {
+	rt := New()
+	useEffect := false
+
+	compFn := func() *node.Node {
+		if useEffect {
+			UseEffect(func() func() { return nil })
+		} else {
+			UseState(0)
+		}
+		return textND("hook")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1011}
+	rt.Update(n)
+
+	useEffect = true
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic on hook order mismatch")
+		}
+	}()
+	rt.Update(n)
+}
+
+func TestRuntimeDisposeRunsEffectCleanup(t *testing.T) {
+	rt := New()
+	cleanupRuns := 0
+
+	compFn := func() *node.Node {
+		UseEffect(func() func() {
+			return func() {
+				cleanupRuns++
+			}
+		})
+		return textND("dispose")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1012}
+	rt.Update(n)
+	rt.RunEffects()
+	rt.Dispose()
+
+	if cleanupRuns != 1 {
+		t.Fatalf("cleanupRuns = %d, want 1", cleanupRuns)
+	}
+}
+
+func TestFewerHooksOnLaterRenderPanics(t *testing.T) {
+	rt := New()
+	enabled := true
+
+	compFn := func() *node.Node {
+		UseState(0)
+		if enabled {
+			UseEffect(func() func() { return nil })
+		}
+		return textND("hooks")
+	}
+
+	n := &node.Node{Kind: node.ComponentKind, CompFn: compFn, CompID: 1013}
+	rt.Update(n)
+
+	enabled = false
+	defer func() {
+		if r := recover(); r == nil {
+			t.Errorf("expected panic when fewer hooks are called")
+		}
+	}()
+	rt.Update(n)
+}
+
 func TestConditionalHookCausesTypeMismatchPanic(t *testing.T) {
 	rt := New()
 	condition := true
@@ -552,6 +934,106 @@ func TestPlainTabStillMovesForward(t *testing.T) {
 	}
 }
 
+func TestOnKeyCaptureCanInterceptTabBeforeFocusTraversal(t *testing.T) {
+	rt := New()
+	captured := false
+
+	root := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			focusableND(),
+			focusableND(),
+		},
+		OnKeyCapture: func(kp node.KeyPress) bool {
+			if kp.Key == input.KeyTab {
+				captured = true
+				return true
+			}
+			return false
+		},
+	}
+	rt.Update(root)
+	first := rt.root.children[0]
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab},
+	})
+
+	if !captured {
+		t.Fatal("expected capture handler to see Tab before focus traversal")
+	}
+	if rt.focused != first {
+		t.Fatal("expected focus to remain unchanged when capture consumes Tab")
+	}
+}
+
+func TestOnKeyCaptureCanAllowTabTraversal(t *testing.T) {
+	rt := New()
+	captured := false
+
+	root := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			focusableND(),
+			focusableND(),
+		},
+		OnKeyCapture: func(kp node.KeyPress) bool {
+			if kp.Key == input.KeyTab {
+				captured = true
+			}
+			return false
+		},
+	}
+	rt.Update(root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab},
+	})
+
+	if !captured {
+		t.Fatal("expected capture handler to observe Tab")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Fatal("expected focus traversal to continue when capture returns false")
+	}
+}
+
+func TestOnKeyCaptureCanInterceptShiftTab(t *testing.T) {
+	rt := New()
+	captured := false
+
+	root := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			focusableND(),
+			focusableND(),
+		},
+		OnKeyCapture: func(kp node.KeyPress) bool {
+			if kp.Key == input.KeyTab && kp.Mod == input.ModShift {
+				captured = true
+				return true
+			}
+			return false
+		},
+	}
+	rt.Update(root)
+	rt.focused = rt.root.children[1]
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab, Mod: tcell.ModShift},
+	})
+
+	if !captured {
+		t.Fatal("expected capture handler to see Shift-Tab before focus traversal")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Fatal("expected focus to remain unchanged when capture consumes Shift-Tab")
+	}
+}
+
 func TestAutoFocusWinsOnInitialMount(t *testing.T) {
 	rt := New()
 	rt.Update(viewND(focusableND(), autoFocusND()))
@@ -700,6 +1182,135 @@ func TestFallbackDeliveryStillVisitsChildOfDisabledParent(t *testing.T) {
 	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Rune: 'z'}})
 	if !childHandled {
 		t.Error("child of disabled parent should be visited even though parent is disabled")
+	}
+}
+
+func TestOnKeyCaptureRunsBeforeFocusedBubble(t *testing.T) {
+	rt := New()
+	var order []string
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(node.KeyPress) bool {
+			order = append(order, "child")
+			return false
+		},
+	}
+	root := &node.Node{
+		Kind:     node.ViewKind,
+		Children: []*node.Node{child},
+		OnKeyCapture: func(node.KeyPress) bool {
+			order = append(order, "root-capture")
+			return false
+		},
+	}
+	rt.Update(root)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if len(order) != 2 || order[0] != "root-capture" || order[1] != "child" {
+		t.Fatalf("expected capture before bubble, got %v", order)
+	}
+}
+
+func TestOnKeyCaptureCanConsumeBeforeFocusedChild(t *testing.T) {
+	rt := New()
+	childHandled := false
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(node.KeyPress) bool {
+			childHandled = true
+			return true
+		},
+	}
+	root := &node.Node{
+		Kind:     node.ViewKind,
+		Children: []*node.Node{child},
+		OnKeyCapture: func(node.KeyPress) bool {
+			return true
+		},
+	}
+	rt.Update(root)
+
+	if !rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyEsc}}) {
+		t.Fatal("expected capture handler to consume key")
+	}
+	if childHandled {
+		t.Fatal("focused child should not receive a key consumed during capture")
+	}
+}
+
+func TestOnKeyCaptureRespectsActiveFocusScope(t *testing.T) {
+	rt := New()
+	backgroundCapture := false
+	scopeCapture := false
+
+	background := &node.Node{
+		Kind: node.ViewKind,
+		OnKeyCapture: func(node.KeyPress) bool {
+			backgroundCapture = true
+			return false
+		},
+	}
+	scopeChild := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKeyCapture: func(node.KeyPress) bool {
+			scopeCapture = true
+			return false
+		},
+	}
+	scope := &node.Node{
+		Kind:       node.ViewKind,
+		FocusScope: true,
+		Children:   []*node.Node{scopeChild},
+	}
+	rt.Update(viewND(background, scope))
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if backgroundCapture {
+		t.Fatal("background capture handler should not run outside the active focus scope")
+	}
+	if !scopeCapture {
+		t.Fatal("capture handler inside the active focus scope should receive the key")
+	}
+}
+
+func TestDisabledCaptureHandlerIsSkipped(t *testing.T) {
+	rt := New()
+	disabledCapture := false
+	childHandled := false
+
+	child := &node.Node{
+		Kind:      node.ViewKind,
+		Focusable: true,
+		OnKey: func(node.KeyPress) bool {
+			childHandled = true
+			return true
+		},
+	}
+	root := &node.Node{
+		Kind:     node.ViewKind,
+		Disabled: true,
+		Children: []*node.Node{child},
+		OnKeyCapture: func(node.KeyPress) bool {
+			disabledCapture = true
+			return true
+		},
+	}
+	rt.Update(root)
+
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}})
+
+	if disabledCapture {
+		t.Fatal("disabled capture handler should be skipped")
+	}
+	if !childHandled {
+		t.Fatal("child should still receive the key through normal bubbling")
 	}
 }
 

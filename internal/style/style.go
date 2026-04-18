@@ -167,18 +167,21 @@ type Style struct {
 	MaxWidth, MaxHeight int
 	FlexGrow            int
 	// FlexShrink is reserved for future use and is not currently implemented.
-	FlexShrink int
-	Direction  Direction
-	AlignItems Align
-	Justify    Justify
-	Padding    Insets
-	Gap        int
-	Border     Border
-	Foreground color.Color
-	Background color.Color
-	Bold       bool
-	Italic     bool
-	Underline  bool
+	FlexShrink    int
+	Direction     Direction
+	AlignItems    Align
+	Justify       Justify
+	Padding       Insets
+	Gap           int
+	Border        Border
+	Foreground    color.Color
+	Background    color.Color
+	Bold          bool
+	Italic        bool
+	Underline     bool
+	Faint         bool
+	Strikethrough bool
+	Reverse       bool
 }
 
 // Merge returns a new style that inherits unspecified colors from parent.
@@ -197,7 +200,7 @@ func Merge(parent, child Style) Style {
 	return out
 }
 
-// MergeVisual returns a new style that inherits colors and visual text attributes (bold, italic, underline) from parent.
+// MergeVisual returns a new style that inherits colors and visual text attributes from parent.
 func MergeVisual(parent, child Style) Style {
 	out := Merge(parent, child)
 
@@ -209,6 +212,15 @@ func MergeVisual(parent, child Style) Style {
 	}
 	if parent.Underline {
 		out.Underline = true
+	}
+	if parent.Faint {
+		out.Faint = true
+	}
+	if parent.Strikethrough {
+		out.Strikethrough = true
+	}
+	if parent.Reverse {
+		out.Reverse = true
 	}
 
 	return out

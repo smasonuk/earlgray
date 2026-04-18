@@ -92,7 +92,7 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 	}
 
 	// Text nodes: size is determined by constraints.
-	if nd.Kind == node.TextKind {
+	if nd.Kind == node.TextKind || nd.Kind == node.RichTextKind {
 		w := c.MaxW
 		h := c.MaxH
 		return &Tree{Result: Result{
@@ -396,6 +396,9 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 	case node.TextKind:
 		return measureText(nd.Text, maxW, maxH)
 
+	case node.RichTextKind:
+		return measureRichText(nd.Spans, maxW, maxH)
+
 	case node.TextPanelKind:
 		s := nd.Style
 		bIns := s.Border.Insets()
@@ -543,6 +546,25 @@ func measureText(text string, maxW, maxH int) (w, h int) {
 		n := runewidth.StringWidth(l)
 		if n > maxLine {
 			maxLine = n
+		}
+	}
+	rh := len(lines)
+	if maxW > 0 && maxLine > maxW {
+		maxLine = maxW
+	}
+	if maxH > 0 && rh > maxH {
+		rh = maxH
+	}
+	return maxLine, rh
+}
+
+func measureRichText(spans []node.TextSpan, maxW, maxH int) (w, h int) {
+	lines := node.SplitTextSpansLines(spans)
+	maxLine := 0
+	for _, line := range lines {
+		width := node.RichTextLineWidth(line)
+		if width > maxLine {
+			maxLine = width
 		}
 	}
 	rh := len(lines)

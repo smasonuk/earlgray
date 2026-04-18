@@ -25,7 +25,7 @@ func DefaultColor() Color {
 	return Color{Kind: Default}
 }
 
-// ANSIColor returns an ANSI palette color (0-15).
+// ANSIColor returns a terminal palette color (0-255).
 func ANSIColor(n int) Color {
 	return Color{Kind: ANSI, ANSIVal: n}
 }

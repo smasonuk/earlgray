@@ -110,7 +110,46 @@ If you render components in a dynamic or reordered list, wrap each in
 
 Tab moves focus forward; Shift+Tab moves focus backward.
 
-Ctrl-C always exits, handled by `tui.Run`.
+`tui.Run` exits on Ctrl-C by default. If your app needs to handle Ctrl-C itself,
+use `tui.RunWithOptions` and set `DisableCtrlCQuit: true`.
+
+## Timers and app handles
+
+`tui.RunWithOptions` can expose an `AppHandle` for background work, programmatic
+quit, and periodic updates:
+
+```go
+var handle tui.AppHandle
+
+err := tui.RunWithOptions(App, tui.RunOptions{
+    DisableCtrlCQuit: true,
+    OnStart: func(h tui.AppHandle) {
+        handle = h
+
+        stop := h.Every(120*time.Millisecond, func() {
+            advanceSpinner()
+        })
+        _ = stop
+    },
+})
+```
+
+- `Post(func())` schedules a UI-safe state update and redraw.
+- `Quit()` exits the app cleanly.
+- `Every(d, fn)` posts `fn` on a ticker and returns an idempotent stop function.
+
+## Key caveats
+
+Terminal key handling has some unavoidable ambiguities:
+
+- Ctrl-I often arrives as plain Tab, so apps should not rely on distinguishing them.
+- Shift-Tab may arrive as Backtab or as Tab with a Shift modifier.
+- Ctrl-C may arrive as a special key instead of a rune with `ModCtrl`.
+- Some Ctrl-letter combinations do not preserve the original letter consistently across terminals.
+
+For global shortcuts, prefer plain keys, Escape, or function keys when possible.
+
+See `examples/keydebug` for a small app that shows the last normalized key event.
 
 ## Button
 

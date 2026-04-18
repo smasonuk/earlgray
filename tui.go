@@ -2,8 +2,14 @@ package tui
 
 import (
 	"reflect"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/smason/earlgray/internal/ansi"
 	"github.com/smason/earlgray/internal/event"
 	"github.com/smason/earlgray/internal/host"
 	"github.com/smason/earlgray/internal/input"
@@ -22,6 +28,7 @@ type Key = input.Key
 const (
 	KeyUnknown   = input.KeyUnknown
 	KeyRune      = input.KeyRune
+	KeyCtrlC     = input.KeyCtrlC
 	KeyEnter     = input.KeyEnter
 	KeyEsc       = input.KeyEsc
 	KeyBackspace = input.KeyBackspace
@@ -85,6 +92,11 @@ func View(s Style, children ...Node) Node {
 	}
 }
 
+// Fragment groups children without adding visual styling.
+func Fragment(children ...Node) Node {
+	return View(Style{}, children...)
+}
+
 // MouseButton identifies which mouse button or wheel direction was activated.
 type MouseButton = input.MouseButton
 
@@ -111,12 +123,13 @@ type MouseEvent = input.MousePress
 
 // ViewProps configures a View node with event handlers and focus.
 type ViewProps struct {
-	Style     Style
-	OnKey     func(KeyEvent) bool
-	OnMouse   func(MouseEvent) bool
-	Focusable bool
-	AutoFocus bool
-	Disabled  bool
+	Style        Style
+	OnKey        func(KeyEvent) bool
+	OnKeyCapture func(KeyEvent) bool
+	OnMouse      func(MouseEvent) bool
+	Focusable    bool
+	AutoFocus    bool
+	Disabled     bool
 
 	// FocusScope traps focus traversal within this view's subtree.
 	FocusScope bool
@@ -125,15 +138,16 @@ type ViewProps struct {
 // ViewWith creates a container node with props and children.
 func ViewWith(props ViewProps, children ...Node) Node {
 	return &inode.Node{
-		Kind:       inode.ViewKind,
-		Style:      props.Style,
-		Children:   children,
-		OnKey:      props.OnKey,
-		OnMouse:    props.OnMouse,
-		Focusable:  props.Focusable,
-		AutoFocus:  props.AutoFocus,
-		Disabled:   props.Disabled,
-		FocusScope: props.FocusScope,
+		Kind:         inode.ViewKind,
+		Style:        props.Style,
+		Children:     children,
+		OnKey:        props.OnKey,
+		OnKeyCapture: props.OnKeyCapture,
+		OnMouse:      props.OnMouse,
+		Focusable:    props.Focusable,
+		AutoFocus:    props.AutoFocus,
+		Disabled:     props.Disabled,
+		FocusScope:   props.FocusScope,
 	}
 }
 
@@ -146,6 +160,48 @@ func Text(value string, opts ...TextOption) Node {
 	return &inode.Node{
 		Kind:     inode.TextKind,
 		Text:     value,
+		TextOpts: textOpts,
+		Style:    textOpts.Style,
+	}
+}
+
+// TextSpan is a styled segment in a RichText node.
+type TextSpan struct {
+	Text  string
+	Style Style
+}
+
+func toInternalTextSpans(spans []TextSpan) []inode.TextSpan {
+	if len(spans) == 0 {
+		return nil
+	}
+	out := make([]inode.TextSpan, len(spans))
+	for i, span := range spans {
+		out[i] = inode.TextSpan{
+			Text:  span.Text,
+			Style: span.Style,
+		}
+	}
+	return out
+}
+
+// RichText creates a text node with multiple styled spans.
+func RichText(spans ...TextSpan) Node {
+	return &inode.Node{
+		Kind:  inode.RichTextKind,
+		Spans: toInternalTextSpans(spans),
+	}
+}
+
+// ANSIText parses ANSI SGR styling sequences into styled spans.
+func ANSIText(value string, opts ...TextOption) Node {
+	var textOpts inode.TextOptions
+	for _, o := range opts {
+		o(&textOpts)
+	}
+	return &inode.Node{
+		Kind:     inode.RichTextKind,
+		Spans:    ansi.ParseText(value),
 		TextOpts: textOpts,
 		Style:    textOpts.Style,
 	}
@@ -190,10 +246,51 @@ func Component(fn func() Node) Node {
 	}
 }
 
+// ComponentWithKey wraps a function component with a reconciliation key.
+// Use this for inline components whose state must be preserved across renders.
+func ComponentWithKey(key string, fn func() Node) Node {
+	return Keyed(key, Component(fn))
+}
+
 // UseState returns the current value of a state slot and a setter function.
 // It must only be called from within a component function.
 func UseState[T any](initial T) (T, func(T)) {
 	return runtime.UseState(initial)
+}
+
+// UseStateWithUpdater returns the current value of a state slot, a setter function,
+// and a functional updater.
+// It must only be called from within a component function.
+func UseStateWithUpdater[T any](initial T) (T, func(T), func(func(T) T)) {
+	return runtime.UseStateWithUpdater(initial)
+}
+
+// UseReducer returns the current state and a dispatch function to apply actions.
+// It must only be called from within a component function.
+func UseReducer[S any, A any](reducer func(S, A) S, initial S) (S, func(A)) {
+	return runtime.UseReducer(reducer, initial)
+}
+
+// UseRef returns a stable pointer for component-local mutable state that does
+// not itself trigger rerenders when mutated.
+//
+// It must only be called from within a component function.
+func UseRef[T any](initial T) *T {
+	return runtime.UseRef(initial)
+}
+
+// UseEffect registers a component-local side effect.
+//
+// The effect runs after the rendered tree has been committed. If the dependency
+// values are unchanged since the previous render, the effect is not rerun.
+//
+// If the effect returns a cleanup function, the cleanup runs:
+//   - before the effect reruns due to dependency changes
+//   - when the component unmounts
+//
+// With zero dependencies, the effect runs once on mount.
+func UseEffect(effect func() func(), deps ...any) {
+	runtime.UseEffect(effect, deps...)
 }
 
 // UseFocused reports whether the current component's rendered subtree contains
@@ -250,6 +347,122 @@ func UseRouter(initial string) Router {
 	}
 }
 
+var DefaultSpinnerFrames = []string{
+	"⠋", "⠙", "⠹", "⠸", "⠼",
+	"⠴", "⠦", "⠧", "⠇", "⠏",
+}
+
+const DefaultSpinnerInterval = 100 * time.Millisecond
+
+// SpinnerProps configures the built-in spinner widget.
+type SpinnerProps struct {
+	Frames   []string
+	Label    string
+	Style    Style
+	Active   bool
+	Interval time.Duration
+}
+
+func spinnerFrames(props SpinnerProps) []string {
+	if len(props.Frames) > 0 {
+		return props.Frames
+	}
+	return DefaultSpinnerFrames
+}
+
+func spinnerFramesKey(frames []string) string {
+	var b strings.Builder
+	for _, frame := range frames {
+		b.WriteString(strconv.Itoa(len(frame)))
+		b.WriteRune(':')
+		b.WriteString(frame)
+		b.WriteRune(';')
+	}
+	return b.String()
+}
+
+// Spinner renders a text spinner that can animate while active.
+func Spinner(props SpinnerProps) Node {
+	return Component(func() Node {
+		frames := spinnerFrames(props)
+		frameCount := len(frames)
+
+		frameIndex, _, setFrameIndexGuarded := runtime.UseStateGuarded(0)
+		generation := runtime.UseRef(0)
+
+		interval := props.Interval
+		if interval <= 0 {
+			interval = DefaultSpinnerInterval
+		}
+
+		active := props.Active
+		framesKey := spinnerFramesKey(frames)
+
+		UseEffect(func() func() {
+			if !active || frameCount <= 1 {
+				return nil
+			}
+
+			stop := make(chan struct{})
+			var stopped atomic.Bool
+			(*generation)++
+			gen := *generation
+			i := 0
+			if frameCount > 0 {
+				i = frameIndex % frameCount
+			}
+
+			go func() {
+				ticker := time.NewTicker(interval)
+				defer ticker.Stop()
+
+				for {
+					select {
+					case <-ticker.C:
+						if stopped.Load() {
+							return
+						}
+						next := (i + 1) % frameCount
+						i = next
+						setFrameIndexGuarded(next, func() bool {
+							return *generation == gen
+						})
+					case <-stop:
+						return
+					}
+				}
+			}()
+
+			return func() {
+				stopped.Store(true)
+				(*generation)++
+				close(stop)
+			}
+		}, active, interval, framesKey)
+
+		displayIndex := 0
+		if frameCount > 0 {
+			displayIndex = frameIndex % frameCount
+		}
+
+		frame := ""
+		if frameCount > 0 {
+			frame = frames[displayIndex]
+		}
+
+		text := frame
+		if props.Label != "" {
+			if text == "" {
+				text = props.Label
+			} else {
+				text += " " + props.Label
+			}
+		}
+
+		return Text(text, WithTextStyle(props.Style))
+	})
+}
+
 // ButtonProps configures a Button widget.
 type ButtonProps struct {
 	Label   string
@@ -284,6 +497,15 @@ func overlayVisualStyle(base, focus Style) Style {
 	}
 	if focus.Underline {
 		out.Underline = true
+	}
+	if focus.Faint {
+		out.Faint = true
+	}
+	if focus.Strikethrough {
+		out.Strikethrough = true
+	}
+	if focus.Reverse {
+		out.Reverse = true
 	}
 	return out
 }
@@ -1071,6 +1293,16 @@ type TextPanelProps struct {
 	// has more lines than the visible viewport.
 	ShowScrollbar bool
 
+	// AutoScrollBottom forces the panel to remain pinned to the bottom.
+	AutoScrollBottom bool
+
+	// ResetScrollKey resets the retained scroll position when its value changes.
+	ResetScrollKey string
+
+	// InitialScrollX and InitialScrollY apply on mount and when ResetScrollKey changes.
+	InitialScrollX int
+	InitialScrollY int
+
 	AutoFocus bool
 	Disabled  bool
 }
@@ -1101,11 +1333,83 @@ func TextPanel(props TextPanelProps) Node {
 			AutoFocus: props.AutoFocus,
 			Disabled:  props.Disabled,
 			TextPanelOpts: inode.TextPanelOptions{
-				WordWrap:      props.WordWrap,
-				ShowScrollbar: props.ShowScrollbar,
+				WordWrap:         props.WordWrap,
+				ShowScrollbar:    props.ShowScrollbar,
+				AutoScrollBottom: props.AutoScrollBottom,
+				ResetScrollKey:   props.ResetScrollKey,
+				InitialScrollX:   props.InitialScrollX,
+				InitialScrollY:   props.InitialScrollY,
 			},
 		}
 	})
+}
+
+// AppHandle exposes safe app-level actions to background goroutines.
+type AppHandle struct {
+	Post  func(func())
+	Quit  func()
+	Every func(time.Duration, func()) func()
+}
+
+// AppContext provides app-level actions to components.
+type AppContext = runtime.AppContext
+
+// UseApp returns the current AppContext.
+// It must only be called from within a component function.
+func UseApp() AppContext {
+	return runtime.UseApp()
+}
+
+// UseChannel registers a subscription to a channel.
+// It starts a goroutine that reads values from the channel and executes
+// onValue for each received value on the EarlGray app loop.
+// The subscription is stopped when the component unmounts or dependencies change.
+// If ch is nil, no subscription is created.
+func UseChannel[T any](ch <-chan T, onValue func(T), deps ...any) {
+	appCtx := UseApp()
+
+	UseEffect(func() func() {
+		if ch == nil {
+			return nil
+		}
+
+		stop := make(chan struct{})
+		var stopped atomic.Bool
+
+		go func() {
+			for {
+				select {
+				case <-stop:
+					return
+				case val, ok := <-ch:
+					if !ok {
+						return
+					}
+					if stopped.Load() {
+						return
+					}
+					if onValue != nil {
+						appCtx.Post(func() {
+							onValue(val)
+						})
+					}
+				}
+			}
+		}()
+
+		return func() {
+			stopped.Store(true)
+			close(stop)
+		}
+	}, deps...)
+}
+
+// RunOptions configures the TUI event loop.
+type RunOptions struct {
+	// DisableCtrlCQuit prevents EarlGray from automatically quitting on Ctrl-C.
+	// When true, Ctrl-C is delivered to app key handlers as KeyCtrlC.
+	DisableCtrlCQuit bool
+	OnStart          func(AppHandle)
 }
 
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
@@ -1115,7 +1419,12 @@ type hostFactory func() (host.Host, error)
 // Run starts the TUI event loop, rendering root on each update until Ctrl-C or
 // the terminal closes.
 func Run(root func() Node) error {
-	return runWithHost(root, func() (host.Host, error) {
+	return RunWithOptions(root, RunOptions{})
+}
+
+// RunWithOptions starts the TUI event loop with configurable startup and quit behavior.
+func RunWithOptions(root func() Node, opts RunOptions) error {
+	return runWithHost(root, opts, func() (host.Host, error) {
 		h, err := host.NewTcellHost()
 		if err != nil {
 			return nil, err
@@ -1126,7 +1435,7 @@ func Run(root func() Node) error {
 
 // runWithHost is the testable core of Run. It accepts a host factory so tests
 // can inject a fake host without requiring a real terminal.
-func runWithHost(root func() Node, newHost hostFactory) error {
+func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 	h, err := newHost()
 	if err != nil {
 		return err
@@ -1136,7 +1445,85 @@ func runWithHost(root func() Node, newHost hostFactory) error {
 	}
 	defer h.Close()
 
+	appEvents := make(chan func(), 1024)
+	hostEvents := make(chan event.Event, 64)
+	quit := make(chan struct{})
+	done := make(chan struct{})
+
+	var quitOnce sync.Once
+	var doneOnce sync.Once
+	var shuttingDown atomic.Bool
+
+	shutdown := func() {
+		shuttingDown.Store(true)
+		quitOnce.Do(func() {
+			close(quit)
+		})
+		doneOnce.Do(func() {
+			close(done)
+		})
+	}
+	defer shutdown()
+
+	var handle AppHandle
+	handle = AppHandle{
+		Post: func(fn func()) {
+			if fn == nil {
+				return
+			}
+			if shuttingDown.Load() {
+				return
+			}
+			select {
+			case <-quit:
+				return
+			default:
+			}
+			select {
+			case appEvents <- fn:
+			case <-quit:
+			}
+		},
+		Quit: shutdown,
+		Every: func(d time.Duration, fn func()) func() {
+			if d <= 0 || fn == nil {
+				return func() {}
+			}
+
+			stop := make(chan struct{})
+			var stopOnce sync.Once
+
+			go func() {
+				ticker := time.NewTicker(d)
+				defer ticker.Stop()
+
+				for {
+					select {
+					case <-ticker.C:
+						handle.Post(fn)
+					case <-stop:
+						return
+					case <-quit:
+						return
+					}
+				}
+			}()
+
+			return func() {
+				stopOnce.Do(func() {
+					close(stop)
+				})
+			}
+		},
+	}
+
 	rt := runtime.New()
+	rt.SetAppContext(AppContext{
+		Post:  handle.Post,
+		Quit:  handle.Quit,
+		Every: handle.Every,
+	})
+	defer rt.Dispose()
 	w, h2 := h.Size()
 
 	doRender := func(prev *screen.Buffer) *screen.Buffer {
@@ -1152,6 +1539,7 @@ func runWithHost(root func() Node, newHost hostFactory) error {
 			h.HideCursor()
 		}
 		h.Show()
+		rt.RunEffects()
 		return next
 	}
 
@@ -1165,25 +1553,73 @@ func runWithHost(root func() Node, newHost hostFactory) error {
 		}
 	}
 
+	drainAppEvents := func() {
+		for {
+			select {
+			case fn := <-appEvents:
+				if fn != nil {
+					fn()
+					rt.MarkDirty()
+				}
+			default:
+				return
+			}
+		}
+	}
+
 	prev := renderUntilClean(nil)
 
-	for {
-		ev := h.PollEvent()
-		switch ev.Kind {
-		case event.QuitKind:
-			return nil
-		case event.ResizeKind:
-			w, h2 = ev.Width, ev.Height
-			rt.MarkDirty()
-		case event.KeyKind:
-			// Quit on Ctrl-C.
-			if ev.Key.IsCtrlC() {
-				return nil
+	go func() {
+		for {
+			ev := h.PollEvent()
+			select {
+			case hostEvents <- ev:
+			case <-done:
+				return
 			}
-			rt.HandleEvent(ev)
-		case event.MouseKind:
-			rt.HandleEvent(ev)
+			if ev.Kind == event.QuitKind {
+				return
+			}
 		}
+	}()
+
+	if opts.OnStart != nil {
+		go opts.OnStart(handle)
+	}
+
+	for {
+		select {
+		case <-quit:
+			return nil
+		case fn := <-appEvents:
+			if fn != nil {
+				fn()
+				rt.MarkDirty()
+			}
+		case ev := <-hostEvents:
+			switch ev.Kind {
+			case event.QuitKind:
+				shutdown()
+				return nil
+			case event.ResizeKind:
+				w, h2 = ev.Width, ev.Height
+				rt.MarkDirty()
+			case event.KeyKind:
+				if !opts.DisableCtrlCQuit && ev.Key.IsCtrlC() {
+					shutdown()
+					return nil
+				}
+				if rt.HandleEvent(ev) {
+					rt.MarkDirty()
+				}
+			case event.MouseKind:
+				if rt.HandleEvent(ev) {
+					rt.MarkDirty()
+				}
+			}
+		}
+
+		drainAppEvents()
 
 		if rt.IsDirty() {
 			prev = renderUntilClean(prev)

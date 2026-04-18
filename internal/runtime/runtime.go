@@ -3,6 +3,7 @@ package runtime
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
@@ -35,8 +36,8 @@ type Instance struct {
 	// Layout result from the most recent layout pass.
 	layout layout.Result
 
-	// Hook slots for UseState (indexed by hook call order).
-	hookSlots []any
+	// Hook slots for component hooks (indexed by hook call order).
+	hookSlots []hookSlot
 	hookIdx   int // reset to 0 at the start of each render
 
 	// dirty marks this instance as needing re-render.
@@ -48,8 +49,10 @@ type Instance struct {
 	// Scroll state for scrollable nodes such as TextPanelKind.
 	// scrollY is measured in visual lines after wrapping.
 	// scrollX is measured in terminal cells and is only used when word wrap is disabled.
-	scrollX int
-	scrollY int
+	scrollX            int
+	scrollY            int
+	textPanelResetKey  string
+	textPanelScrollSet bool
 }
 
 // cursorState holds the cursor position requested by the most recently rendered
@@ -65,6 +68,31 @@ type focusScopeFrame struct {
 	restoreTo *Instance // the focused instance before this scope was entered
 }
 
+type hookKind int
+
+const (
+	hookState hookKind = iota
+	hookEffect
+	hookRef
+)
+
+type hookSlot struct {
+	kind   hookKind
+	state  any
+	effect effectSlot
+}
+
+type effectSlot struct {
+	deps    []any
+	cleanup func()
+}
+
+type pendingEffect struct {
+	inst   *Instance
+	idx    int
+	effect func() func()
+}
+
 // Runtime manages the component tree lifecycle.
 type Runtime struct {
 	root  *Instance
@@ -78,7 +106,17 @@ type Runtime struct {
 	// and what was focused before entering that scope.
 	scopeStack []focusScopeFrame
 
+	pendingEffects []pendingEffect
+	appCtx         AppContext
+
 	lastMouseButtons input.MouseButton
+}
+
+// AppContext provides app-level actions to components.
+type AppContext struct {
+	Post  func(func())
+	Quit  func()
+	Every func(time.Duration, func()) func()
 }
 
 // New creates a new Runtime.
@@ -91,6 +129,22 @@ func (r *Runtime) MarkDirty() {
 	r.dirty = true
 }
 
+// SetAppContext configures the app context for UseApp.
+func (r *Runtime) SetAppContext(ctx AppContext) {
+	r.appCtx = ctx
+}
+
+// GetAppContext returns the current app context.
+func (r *Runtime) GetAppContext() AppContext {
+	return r.appCtx
+}
+
+// SetPost configures an optional callback used to marshal work onto the app loop.
+// Deprecated: use SetAppContext.
+func (r *Runtime) SetPost(post func(func())) {
+	r.appCtx.Post = post
+}
+
 // IsDirty reports whether a re-render is needed.
 func (r *Runtime) IsDirty() bool {
 	return r.dirty
@@ -98,6 +152,7 @@ func (r *Runtime) IsDirty() bool {
 
 // Update reconciles the existing instance tree against a new node tree.
 func (r *Runtime) Update(n *node.Node) {
+	r.pendingEffects = nil
 	if r.root == nil {
 		r.root = mount(r, nil, n)
 	} else {
@@ -116,6 +171,67 @@ func (r *Runtime) Focused() *Instance {
 // visible is false if no node requested a cursor.
 func (r *Runtime) Cursor() (x, y int, visible bool) {
 	return r.cursor.x, r.cursor.y, r.cursor.visible
+}
+
+func (r *Runtime) enqueue(fn func()) {
+	if fn == nil {
+		return
+	}
+	if r.appCtx.Post != nil {
+		r.appCtx.Post(fn)
+		return
+	}
+	fn()
+}
+
+func (r *Runtime) enqueueEffect(inst *Instance, idx int, effect func() func()) {
+	r.pendingEffects = append(r.pendingEffects, pendingEffect{
+		inst:   inst,
+		idx:    idx,
+		effect: effect,
+	})
+}
+
+// RunEffects executes effects queued during the most recent committed render.
+func (r *Runtime) RunEffects() {
+	pending := r.pendingEffects
+	r.pendingEffects = nil
+
+	for _, p := range pending {
+		if !isInstanceMounted(r.root, p.inst) {
+			continue
+		}
+		if p.idx < 0 || p.idx >= len(p.inst.hookSlots) {
+			continue
+		}
+
+		slot := &p.inst.hookSlots[p.idx]
+		if slot.kind != hookEffect {
+			continue
+		}
+
+		if slot.effect.cleanup != nil {
+			slot.effect.cleanup()
+			slot.effect.cleanup = nil
+		}
+
+		cleanup := p.effect()
+		if cleanup != nil && isInstanceMounted(r.root, p.inst) {
+			slot.effect.cleanup = cleanup
+		}
+	}
+}
+
+// Dispose unmounts the current instance tree and runs any outstanding cleanups.
+func (r *Runtime) Dispose() {
+	if r.root != nil {
+		unmount(r.root)
+	}
+	r.root = nil
+	r.focused = nil
+	r.scopeStack = nil
+	r.pendingEffects = nil
+	r.dirty = false
 }
 
 // RunLayout computes layout for the current instance tree.
@@ -156,7 +272,7 @@ func buildSyntheticNode(inst *Instance) *node.Node {
 			synth.Children[i] = buildSyntheticNode(child)
 		}
 		return &synth
-	default: // TextKind, TextPanelKind
+	default: // TextKind, RichTextKind, TextPanelKind
 		return inst.nd
 	}
 }
@@ -200,6 +316,25 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 		return false
 	}
 
+	press := input.KeyPress{
+		Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune, ev.Key.Mod),
+		Rune: ev.Key.Rune,
+		Mod:  normalizeMod(ev.Key.Mod),
+	}
+	root := activeFocusRoot(r.root)
+
+	if r.focused != nil {
+		for _, inst := range focusedPath(root, r.focused) {
+			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKeyCapture != nil {
+				if inst.nd.OnKeyCapture(press) {
+					return true
+				}
+			}
+		}
+	} else if deliverKeyCapture(root, ev.Key) {
+		return true
+	}
+
 	// Shift+Tab moves focus backward; plain Tab moves forward.
 	if ev.Key.IsShiftTab() {
 		r.focusPrev()
@@ -214,12 +349,6 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 
 	// Deliver to focused node, then bubble up the parent chain.
 	if r.focused != nil {
-		press := input.KeyPress{
-			Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune),
-			Rune: ev.Key.Rune,
-			Mod:  normalizeMod(ev.Key.Mod),
-		}
-
 		if r.focused.nd != nil &&
 			r.focused.nd.Kind == node.TextPanelKind &&
 			!r.focused.nd.Disabled &&
@@ -228,7 +357,6 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			return true
 		}
 
-		root := activeFocusRoot(r.root)
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
@@ -243,7 +371,7 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 	}
 
 	// No focused node: fall back to depth-first delivery within the active focus scope.
-	return deliverKey(activeFocusRoot(r.root), ev.Key)
+	return deliverKey(root, ev.Key)
 }
 
 // handleMouse dispatches a mouse event: hit-tests, focuses clicked nodes,
@@ -367,13 +495,54 @@ func deliverKey(inst *Instance, key event.Key) bool {
 	}
 	if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 		press := input.KeyPress{
-			Key:  event.NormalizeKey(key.Key, key.Rune),
+			Key:  event.NormalizeKey(key.Key, key.Rune, key.Mod),
 			Rune: key.Rune,
 			Mod:  normalizeMod(key.Mod),
 		}
 		return inst.nd.OnKey(press)
 	}
 	return false
+}
+
+func deliverKeyCapture(inst *Instance, key event.Key) bool {
+	if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKeyCapture != nil {
+		press := input.KeyPress{
+			Key:  event.NormalizeKey(key.Key, key.Rune, key.Mod),
+			Rune: key.Rune,
+			Mod:  normalizeMod(key.Mod),
+		}
+		if inst.nd.OnKeyCapture(press) {
+			return true
+		}
+	}
+	for _, child := range inst.children {
+		if deliverKeyCapture(child, key) {
+			return true
+		}
+	}
+	return false
+}
+
+func focusedPath(root, focused *Instance) []*Instance {
+	if root == nil || focused == nil {
+		return nil
+	}
+
+	var path []*Instance
+	for inst := focused; inst != nil; inst = inst.parent {
+		path = append(path, inst)
+		if inst == root {
+			break
+		}
+	}
+	if len(path) == 0 || path[len(path)-1] != root {
+		return nil
+	}
+
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+	return path
 }
 
 // collectFocusable returns all focusable instances in depth-first order.
@@ -582,6 +751,10 @@ func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
 		key:     n.Key,
 	}
 
+	if n.Kind == node.TextPanelKind {
+		resetTextPanelState(inst)
+	}
+
 	// For component nodes, render the component and mount its output.
 	if n.Kind == node.ComponentKind {
 		inst.compID = n.CompID
@@ -609,12 +782,17 @@ func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
 // parent is the parent of inst in the new tree (may be nil for root).
 func reconcile(rt *Runtime, parent *Instance, inst *Instance, n *node.Node) *Instance {
 	if !sameKind(inst, n) {
+		unmount(inst)
 		return mount(rt, parent, n)
 	}
 
 	inst.nd = n
 	inst.kind = n.Kind
 	inst.key = n.Key
+
+	if n.Kind == node.TextPanelKind {
+		applyTextPanelReset(inst)
+	}
 
 	switch n.Kind {
 	case node.ComponentKind:
@@ -653,6 +831,7 @@ func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 
 	next := make([]*Instance, len(newChildren))
 	usedOld := make([]bool, len(old))
+	reused := make(map[*Instance]bool, len(old))
 
 	for i, nc := range newChildren {
 		var matched *Instance
@@ -672,9 +851,16 @@ func reconcileChildren(rt *Runtime, inst *Instance, newChildren []*node.Node) {
 		}
 
 		if matched != nil {
+			reused[matched] = true
 			next[i] = reconcile(rt, inst, matched, nc)
 		} else {
 			next[i] = mount(rt, inst, nc)
+		}
+	}
+
+	for _, oldInst := range old {
+		if !reused[oldInst] {
+			unmount(oldInst)
 		}
 	}
 
@@ -701,7 +887,46 @@ func renderComponent(inst *Instance, n *node.Node) *node.Node {
 	prev := renderingInstance
 	renderingInstance = inst
 	defer func() { renderingInstance = prev }()
-	return n.CompFn()
+	child := n.CompFn()
+	if inst.hookIdx < len(inst.hookSlots) {
+		panic("tui: hook order changed: fewer hooks called than previous render")
+	}
+	return child
+}
+
+func isInstanceMounted(root, target *Instance) bool {
+	if root == nil || target == nil {
+		return false
+	}
+	if root == target {
+		return true
+	}
+	for _, child := range root.children {
+		if isInstanceMounted(child, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func unmount(inst *Instance) {
+	if inst == nil {
+		return
+	}
+
+	for _, child := range inst.children {
+		unmount(child)
+	}
+
+	for i := range inst.hookSlots {
+		slot := &inst.hookSlots[i]
+		if slot.kind == hookEffect && slot.effect.cleanup != nil {
+			slot.effect.cleanup()
+			slot.effect.cleanup = nil
+		}
+	}
+
+	inst.children = nil
 }
 
 // applyLayout walks the layout tree and stores results in instances.
@@ -734,21 +959,12 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.OverlayKind {
 		s := style.MergeVisual(inherited, inst.nd.Style)
+		fillStyle := screenCellStyleFromStyle(s)
 
 		if inst.nd.Style.Background.IsSpecified() {
-			fillStyle := screen.CellStyle{
-				Fg: s.Foreground,
-				Bg: s.Background,
-			}
 			buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
 		}
-
-		borderStyle := screen.CellStyle{
-			Fg:   s.Foreground,
-			Bg:   s.Background,
-			Bold: s.Bold,
-		}
-		drawBorders(buf, r, s.Border, borderStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
 
 		for _, child := range inst.children {
 			renderInstance(child, buf, s, cursor)
@@ -758,19 +974,9 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.TextPanelKind {
 		s := style.MergeVisual(inherited, inst.nd.Style)
-
-		fillStyle := screen.CellStyle{
-			Fg: s.Foreground,
-			Bg: s.Background,
-		}
+		fillStyle := screenCellStyleFromStyle(s)
 		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
-
-		borderStyle := screen.CellStyle{
-			Fg:   s.Foreground,
-			Bg:   s.Background,
-			Bold: s.Bold,
-		}
-		drawBorders(buf, r, s.Border, borderStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
 
 		renderTextPanel(inst, buf, content, s)
 		return
@@ -778,19 +984,9 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 
 	if inst.nd.Kind == node.ViewKind {
 		s := style.MergeVisual(inherited, inst.nd.Style)
-
-		fillStyle := screen.CellStyle{
-			Fg: s.Foreground,
-			Bg: s.Background,
-		}
+		fillStyle := screenCellStyleFromStyle(s)
 		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
-
-		borderStyle := screen.CellStyle{
-			Fg:   s.Foreground,
-			Bg:   s.Background,
-			Bold: s.Bold,
-		}
-		drawBorders(buf, r, s.Border, borderStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
 
 		if inst.nd.CursorVisible && cursor != nil && content.W > 0 && content.H > 0 {
 			cx := inst.nd.CursorX
@@ -821,14 +1017,15 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	if inst.nd.Kind == node.TextKind {
 		opts := inst.nd.TextOpts
 		s := style.MergeVisual(inherited, opts.Style)
-		textStyle := screen.CellStyle{
-			Fg:        s.Foreground,
-			Bg:        s.Background,
-			Bold:      s.Bold,
-			Italic:    s.Italic,
-			Underline: s.Underline,
-		}
+		textStyle := screenCellStyleFromStyle(s)
 		drawMultilineText(buf, content, inst.nd.Text, textStyle, opts.Align)
+		return
+	}
+
+	if inst.nd.Kind == node.RichTextKind {
+		opts := inst.nd.TextOpts
+		baseStyle := style.MergeVisual(inherited, opts.Style)
+		drawRichText(buf, content, inst.nd.Spans, baseStyle, opts.Align)
 		return
 	}
 
@@ -838,9 +1035,21 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 	}
 }
 
-// alignedX computes the starting x for a single line of text given alignment.
-func alignedX(rect style.Rect, line string, align node.TextAlign) int {
-	width := runewidth.StringWidth(line)
+func screenCellStyleFromStyle(s style.Style) screen.CellStyle {
+	return screen.CellStyle{
+		Fg:            s.Foreground,
+		Bg:            s.Background,
+		Bold:          s.Bold,
+		Italic:        s.Italic,
+		Underline:     s.Underline,
+		Faint:         s.Faint,
+		Strikethrough: s.Strikethrough,
+		Reverse:       s.Reverse,
+	}
+}
+
+// alignedXByWidth computes the starting x for a single line given alignment.
+func alignedXByWidth(rect style.Rect, width int, align node.TextAlign) int {
 	if width > rect.W {
 		width = rect.W
 	}
@@ -854,6 +1063,11 @@ func alignedX(rect style.Rect, line string, align node.TextAlign) int {
 	}
 }
 
+// alignedX computes the starting x for a single line of text given alignment.
+func alignedX(rect style.Rect, line string, align node.TextAlign) int {
+	return alignedXByWidth(rect, runewidth.StringWidth(line), align)
+}
+
 // drawMultilineText renders text split by newlines with alignment support.
 func drawMultilineText(buf *screen.Buffer, rect style.Rect, text string, st screen.CellStyle, align node.TextAlign) {
 	lines := strings.Split(text, "\n")
@@ -864,6 +1078,22 @@ func drawMultilineText(buf *screen.Buffer, rect style.Rect, text string, st scre
 		x := alignedX(rect, line, align)
 		y := rect.Y + i
 		buf.DrawTextClipped(x, y, line, st, rect.X, rect.Y, rect.W, rect.H)
+	}
+}
+
+func drawRichText(buf *screen.Buffer, rect style.Rect, spans []node.TextSpan, base style.Style, align node.TextAlign) {
+	lines := node.SplitTextSpansLines(spans)
+	for i, line := range lines {
+		if i >= rect.H {
+			break
+		}
+		logicalX := alignedXByWidth(rect, node.RichTextLineWidth(line), align)
+		y := rect.Y + i
+		for _, span := range line {
+			spanStyle := screenCellStyleFromStyle(style.MergeVisual(base, span.Style))
+			buf.DrawTextClipped(logicalX, y, span.Text, spanStyle, rect.X, rect.Y, rect.W, rect.H)
+			logicalX += runewidth.StringWidth(span.Text)
+		}
 	}
 }
 
