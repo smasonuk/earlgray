@@ -2,6 +2,8 @@
 
 A React-like retained-mode TUI library for Go, backed by [tcell](https://github.com/gdamore/tcell).
 
+Under construction.
+
 ## Install
 
 ```sh
