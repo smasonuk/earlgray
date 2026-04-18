@@ -202,6 +202,25 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 		return false
 	}
 
+	press := input.KeyPress{
+		Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune, ev.Key.Mod),
+		Rune: ev.Key.Rune,
+		Mod:  normalizeMod(ev.Key.Mod),
+	}
+	root := activeFocusRoot(r.root)
+
+	if r.focused != nil {
+		for _, inst := range focusedPath(root, r.focused) {
+			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKeyCapture != nil {
+				if inst.nd.OnKeyCapture(press) {
+					return true
+				}
+			}
+		}
+	} else if deliverKeyCapture(root, ev.Key) {
+		return true
+	}
+
 	// Shift+Tab moves focus backward; plain Tab moves forward.
 	if ev.Key.IsShiftTab() {
 		r.focusPrev()
@@ -216,21 +235,6 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 
 	// Deliver to focused node, then bubble up the parent chain.
 	if r.focused != nil {
-		press := input.KeyPress{
-			Key:  event.NormalizeKey(ev.Key.Key, ev.Key.Rune, ev.Key.Mod),
-			Rune: ev.Key.Rune,
-			Mod:  normalizeMod(ev.Key.Mod),
-		}
-
-		root := activeFocusRoot(r.root)
-		for _, inst := range focusedPath(root, r.focused) {
-			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKeyCapture != nil {
-				if inst.nd.OnKeyCapture(press) {
-					return true
-				}
-			}
-		}
-
 		if r.focused.nd != nil &&
 			r.focused.nd.Kind == node.TextPanelKind &&
 			!r.focused.nd.Disabled &&
@@ -253,10 +257,6 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 	}
 
 	// No focused node: fall back to depth-first delivery within the active focus scope.
-	root := activeFocusRoot(r.root)
-	if deliverKeyCapture(root, ev.Key) {
-		return true
-	}
 	return deliverKey(root, ev.Key)
 }
 
@@ -925,11 +925,12 @@ func drawRichText(buf *screen.Buffer, rect style.Rect, spans []node.TextSpan, ba
 		if i >= rect.H {
 			break
 		}
-		x := alignedXByWidth(rect, node.RichTextLineWidth(line), align)
+		logicalX := alignedXByWidth(rect, node.RichTextLineWidth(line), align)
 		y := rect.Y + i
 		for _, span := range line {
 			spanStyle := screenCellStyleFromStyle(style.MergeVisual(base, span.Style))
-			x = buf.DrawTextClipped(x, y, span.Text, spanStyle, rect.X, rect.Y, rect.W, rect.H)
+			buf.DrawTextClipped(logicalX, y, span.Text, spanStyle, rect.X, rect.Y, rect.W, rect.H)
+			logicalX += runewidth.StringWidth(span.Text)
 		}
 	}
 }

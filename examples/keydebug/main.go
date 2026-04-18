@@ -20,7 +20,7 @@ func App() tui.Node {
 				},
 				Focusable: true,
 				AutoFocus: true,
-				OnKey: func(ev tui.KeyEvent) bool {
+				OnKeyCapture: func(ev tui.KeyEvent) bool {
 					setLast(fmt.Sprintf("Key=%v Rune=%q Mod=%v", ev.Key, ev.Rune, ev.Mod))
 					return true
 				},

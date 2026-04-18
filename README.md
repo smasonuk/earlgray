@@ -111,7 +111,7 @@ If you render components in a dynamic or reordered list, wrap each in
 Tab moves focus forward; Shift+Tab moves focus backward.
 
 `tui.Run` exits on Ctrl-C by default. If your app needs to handle Ctrl-C itself,
-use `tui.RunWithOptions` and set `QuitOnCtrlC: false`.
+use `tui.RunWithOptions` and set `DisableCtrlCQuit: true`.
 
 ## Timers and app handles
 
@@ -122,7 +122,7 @@ quit, and periodic updates:
 var handle tui.AppHandle
 
 err := tui.RunWithOptions(App, tui.RunOptions{
-    QuitOnCtrlC: false,
+    DisableCtrlCQuit: true,
     OnStart: func(h tui.AppHandle) {
         handle = h
 

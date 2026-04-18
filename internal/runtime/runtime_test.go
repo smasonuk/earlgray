@@ -552,6 +552,106 @@ func TestPlainTabStillMovesForward(t *testing.T) {
 	}
 }
 
+func TestOnKeyCaptureCanInterceptTabBeforeFocusTraversal(t *testing.T) {
+	rt := New()
+	captured := false
+
+	root := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			focusableND(),
+			focusableND(),
+		},
+		OnKeyCapture: func(kp node.KeyPress) bool {
+			if kp.Key == input.KeyTab {
+				captured = true
+				return true
+			}
+			return false
+		},
+	}
+	rt.Update(root)
+	first := rt.root.children[0]
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab},
+	})
+
+	if !captured {
+		t.Fatal("expected capture handler to see Tab before focus traversal")
+	}
+	if rt.focused != first {
+		t.Fatal("expected focus to remain unchanged when capture consumes Tab")
+	}
+}
+
+func TestOnKeyCaptureCanAllowTabTraversal(t *testing.T) {
+	rt := New()
+	captured := false
+
+	root := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			focusableND(),
+			focusableND(),
+		},
+		OnKeyCapture: func(kp node.KeyPress) bool {
+			if kp.Key == input.KeyTab {
+				captured = true
+			}
+			return false
+		},
+	}
+	rt.Update(root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab},
+	})
+
+	if !captured {
+		t.Fatal("expected capture handler to observe Tab")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Fatal("expected focus traversal to continue when capture returns false")
+	}
+}
+
+func TestOnKeyCaptureCanInterceptShiftTab(t *testing.T) {
+	rt := New()
+	captured := false
+
+	root := &node.Node{
+		Kind: node.ViewKind,
+		Children: []*node.Node{
+			focusableND(),
+			focusableND(),
+		},
+		OnKeyCapture: func(kp node.KeyPress) bool {
+			if kp.Key == input.KeyTab && kp.Mod == input.ModShift {
+				captured = true
+				return true
+			}
+			return false
+		},
+	}
+	rt.Update(root)
+	rt.focused = rt.root.children[1]
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyTab, Mod: tcell.ModShift},
+	})
+
+	if !captured {
+		t.Fatal("expected capture handler to see Shift-Tab before focus traversal")
+	}
+	if rt.focused != rt.root.children[1] {
+		t.Fatal("expected focus to remain unchanged when capture consumes Shift-Tab")
+	}
+}
+
 func TestAutoFocusWinsOnInitialMount(t *testing.T) {
 	rt := New()
 	rt.Update(viewND(focusableND(), autoFocusND()))

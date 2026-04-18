@@ -134,7 +134,7 @@ func TestRunInitialRenderDrainsFocusDirtyState(t *testing.T) {
 	}
 
 	fake := newFakeHost(80, 24, nil) // no events → immediate quit
-	if err := runWithHost(app, RunOptions{QuitOnCtrlC: true}, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -184,7 +184,7 @@ func TestRunPostEventRenderDrainsDirtyState(t *testing.T) {
 		// QuitKind will be returned automatically when the queue is empty.
 	}
 	fake := newFakeHost(80, 24, events)
-	if err := runWithHost(app, RunOptions{QuitOnCtrlC: true}, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -204,7 +204,7 @@ func TestRunCursorVisibleForFocusedTextInput(t *testing.T) {
 	}
 
 	fake := newFakeHost(80, 24, nil)
-	if err := runWithHost(app, RunOptions{QuitOnCtrlC: true}, func() (host.Host, error) { return fake, nil }); err != nil {
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -224,7 +224,6 @@ func TestRunWithOptionsPostTriggersRerender(t *testing.T) {
 
 	fake := newBlockingFakeHost(80, 24)
 	err := runWithHost(app, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			h.Post(func() {
 				value = "after"
@@ -249,7 +248,6 @@ func TestRunWithOptionsPostOrderIsPreserved(t *testing.T) {
 
 	fake := newBlockingFakeHost(80, 24)
 	err := runWithHost(app, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			h.Post(func() { value += "a" })
 			h.Post(func() {
@@ -270,7 +268,6 @@ func TestRunWithOptionsPostOrderIsPreserved(t *testing.T) {
 func TestRunWithOptionsQuitExits(t *testing.T) {
 	fake := newBlockingFakeHost(80, 24)
 	err := runWithHost(func() Node { return Text("hello") }, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			h.Quit()
 		},
@@ -283,7 +280,6 @@ func TestRunWithOptionsQuitExits(t *testing.T) {
 func TestRunWithOptionsPostAfterQuitIsSafe(t *testing.T) {
 	fake := newBlockingFakeHost(80, 24)
 	err := runWithHost(func() Node { return Text("hello") }, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			h.Quit()
 			h.Quit()
@@ -298,7 +294,6 @@ func TestRunWithOptionsPostAfterQuitIsSafe(t *testing.T) {
 }
 
 func TestRunWithOptionsCtrlCDisabledDeliversKey(t *testing.T) {
-	var handle AppHandle
 	receivedCtrlC := false
 
 	app := func() Node {
@@ -307,7 +302,6 @@ func TestRunWithOptionsCtrlCDisabledDeliversKey(t *testing.T) {
 			OnKey: func(ev KeyEvent) bool {
 				if ev.Key == KeyCtrlC {
 					receivedCtrlC = true
-					handle.Quit()
 					return true
 				}
 				return false
@@ -319,10 +313,7 @@ func TestRunWithOptionsCtrlCDisabledDeliversKey(t *testing.T) {
 		{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyCtrlC}},
 	})
 	err := runWithHost(app, RunOptions{
-		QuitOnCtrlC: false,
-		OnStart: func(h AppHandle) {
-			handle = h
-		},
+		DisableCtrlCQuit: true,
 	}, func() (host.Host, error) { return fake, nil })
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +339,7 @@ func TestRunWithOptionsCtrlCQuitsByDefault(t *testing.T) {
 	fake := newFakeHost(80, 24, []event.Event{
 		{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyCtrlC}},
 	})
-	err := runWithHost(app, RunOptions{QuitOnCtrlC: true}, func() (host.Host, error) { return fake, nil })
+	err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +357,6 @@ func TestRunWithOptionsEveryTriggersRerender(t *testing.T) {
 
 	fake := newBlockingFakeHost(80, 24)
 	err := runWithHost(app, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			h.Every(5*time.Millisecond, func() {
 				count++
@@ -393,7 +383,6 @@ func TestRunWithOptionsEveryStopStopsFutureTicks(t *testing.T) {
 	fake := newBlockingFakeHost(80, 24)
 
 	err := runWithHost(func() Node { return Text(string(rune('0' + count))) }, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			var stop func()
 			stop = h.Every(5*time.Millisecond, func() {
@@ -423,7 +412,6 @@ func TestRunWithOptionsQuitStopsIntervalWithoutPanic(t *testing.T) {
 	fired := make(chan struct{}, 1)
 
 	err := runWithHost(func() Node { return Text("hello") }, RunOptions{
-		QuitOnCtrlC: true,
 		OnStart: func(h AppHandle) {
 			h.Every(50*time.Millisecond, func() {
 				select {
@@ -443,5 +431,110 @@ func TestRunWithOptionsQuitStopsIntervalWithoutPanic(t *testing.T) {
 	case <-fired:
 		t.Fatal("interval should not fire after quit")
 	default:
+	}
+}
+
+func TestConsumedKeyRerendersExternalState(t *testing.T) {
+	label := "before"
+	app := func() Node {
+		return ViewWith(ViewProps{
+			Focusable: true,
+			AutoFocus: true,
+			OnKey: func(ev KeyEvent) bool {
+				if ev.Key == KeyRune && ev.Rune == 'x' {
+					label = "after"
+					return true
+				}
+				return false
+			},
+		}, Text(label))
+	}
+
+	fake := newFakeHost(80, 24, []event.Event{
+		{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}},
+	})
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if !fake.containsText("after") {
+		t.Fatalf("expected final frame to contain %q; screen: %q", "after", fake.screenText()[:40])
+	}
+}
+
+func TestUnconsumedKeyDoesNotForceRerender(t *testing.T) {
+	renders := 0
+	app := func() Node {
+		renders++
+		return ViewWith(ViewProps{
+			Focusable: true,
+			AutoFocus: true,
+			OnKey: func(ev KeyEvent) bool {
+				return false
+			},
+		}, Text("steady"))
+	}
+
+	fake := newFakeHost(80, 24, []event.Event{
+		{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyRune, Rune: 'x'}},
+	})
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if renders != 2 {
+		t.Fatalf("expected only initial focus-settling renders, got %d", renders)
+	}
+}
+
+func TestConsumedMouseRerendersExternalState(t *testing.T) {
+	label := "before"
+	app := func() Node {
+		return ViewWith(ViewProps{
+			Focusable: true,
+			AutoFocus: true,
+			OnMouse: func(ev MouseEvent) bool {
+				if ev.Button&MouseLeft != 0 && ev.Action == MousePress {
+					label = "after"
+					return true
+				}
+				return false
+			},
+		}, Text(label))
+	}
+
+	fake := newFakeHost(80, 24, []event.Event{
+		{Kind: event.MouseKind, Mouse: event.Mouse{X: 0, Y: 0, Button: MouseLeft}},
+	})
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if !fake.containsText("after") {
+		t.Fatalf("expected final frame to contain %q; screen: %q", "after", fake.screenText()[:40])
+	}
+}
+
+func TestRunWithOptionsZeroValueCtrlCQuits(t *testing.T) {
+	handled := false
+	app := func() Node {
+		return ViewWith(ViewProps{
+			Focusable: true,
+			OnKey: func(KeyEvent) bool {
+				handled = true
+				return true
+			},
+		})
+	}
+
+	fake := newFakeHost(80, 24, []event.Event{
+		{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyCtrlC}},
+	})
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if handled {
+		t.Fatal("expected zero-value RunOptions to preserve default Ctrl-C quit behavior")
 	}
 }

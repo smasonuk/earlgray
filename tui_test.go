@@ -143,6 +143,58 @@ func TestRichTextInheritsParentColor(t *testing.T) {
 	}
 }
 
+func TestRichTextWideRuneClippingDoesNotShiftLaterSpans(t *testing.T) {
+	rt := runtime.New()
+	root := View(
+		Style{Width: Cells(5), Height: Cells(1)},
+		RichText(
+			TextSpan{Text: "abcd界"},
+			TextSpan{Text: "Z", Style: Style{Bold: true}},
+		),
+	)
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(0, 0).Rune; got != 'a' {
+		t.Fatalf("expected 'a' at x=0, got %q", got)
+	}
+	if got := buf.At(3, 0).Rune; got != 'd' {
+		t.Fatalf("expected 'd' at x=3, got %q", got)
+	}
+	if got := buf.At(4, 0).Rune; got == 'Z' {
+		t.Fatal("expected clipped wide rune to keep later span off-screen")
+	}
+	if buf.At(4, 0).Style.Bold {
+		t.Fatal("expected later span style not to leak into clipped cells")
+	}
+}
+
+func TestRichTextWideRuneLogicalAdvanceWhenItFits(t *testing.T) {
+	rt := runtime.New()
+	root := View(
+		Style{Width: Cells(7), Height: Cells(1)},
+		RichText(
+			TextSpan{Text: "abcd界"},
+			TextSpan{Text: "Z"},
+		),
+	)
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(4, 0).Rune; got != '界' {
+		t.Fatalf("expected wide rune to render when it fits, got %q", got)
+	}
+	if got := buf.At(6, 0).Rune; got != 'Z' {
+		t.Fatalf("expected following span to render after the wide rune, got %q", got)
+	}
+}
+
 func TestANSITextRendersColorsWithoutEscapeSequences(t *testing.T) {
 	rt := runtime.New()
 	root := ANSIText("\x1b[31mred\x1b[0m")

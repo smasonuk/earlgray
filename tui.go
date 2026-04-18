@@ -3,6 +3,7 @@ package tui
 import (
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mattn/go-runewidth"
@@ -1188,8 +1189,10 @@ type AppHandle struct {
 
 // RunOptions configures the TUI event loop.
 type RunOptions struct {
-	QuitOnCtrlC bool
-	OnStart     func(AppHandle)
+	// DisableCtrlCQuit prevents EarlGray from automatically quitting on Ctrl-C.
+	// When true, Ctrl-C is delivered to app key handlers as KeyCtrlC.
+	DisableCtrlCQuit bool
+	OnStart          func(AppHandle)
 }
 
 // Run initializes the terminal, runs the main loop, and cleans up on exit.
@@ -1199,9 +1202,7 @@ type hostFactory func() (host.Host, error)
 // Run starts the TUI event loop, rendering root on each update until Ctrl-C or
 // the terminal closes.
 func Run(root func() Node) error {
-	return RunWithOptions(root, RunOptions{
-		QuitOnCtrlC: true,
-	})
+	return RunWithOptions(root, RunOptions{})
 }
 
 // RunWithOptions starts the TUI event loop with configurable startup and quit behavior.
@@ -1234,8 +1235,10 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 
 	var quitOnce sync.Once
 	var doneOnce sync.Once
+	var shuttingDown atomic.Bool
 
 	shutdown := func() {
+		shuttingDown.Store(true)
 		quitOnce.Do(func() {
 			close(quit)
 		})
@@ -1250,6 +1253,14 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 		Post: func(fn func()) {
 			if fn == nil {
 				return
+			}
+			if shuttingDown.Load() {
+				return
+			}
+			select {
+			case <-quit:
+				return
+			default:
 			}
 			select {
 			case appEvents <- fn:
@@ -1320,16 +1331,6 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 
 	prev := renderUntilClean(nil)
 
-	if opts.OnStart != nil {
-		opts.OnStart(handle)
-	}
-
-	select {
-	case <-quit:
-		return nil
-	default:
-	}
-
 	go func() {
 		for {
 			ev := h.PollEvent()
@@ -1343,6 +1344,10 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 			}
 		}
 	}()
+
+	if opts.OnStart != nil {
+		go opts.OnStart(handle)
+	}
 
 	for {
 		select {
@@ -1362,13 +1367,17 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 				w, h2 = ev.Width, ev.Height
 				rt.MarkDirty()
 			case event.KeyKind:
-				if opts.QuitOnCtrlC && ev.Key.IsCtrlC() {
+				if !opts.DisableCtrlCQuit && ev.Key.IsCtrlC() {
 					shutdown()
 					return nil
 				}
-				rt.HandleEvent(ev)
+				if rt.HandleEvent(ev) {
+					rt.MarkDirty()
+				}
 			case event.MouseKind:
-				rt.HandleEvent(ev)
+				if rt.HandleEvent(ev) {
+					rt.MarkDirty()
+				}
 			}
 		}
 
