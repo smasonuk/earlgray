@@ -258,6 +258,14 @@ func TextInput(props TextInputProps) Node {
 			displayValue = props.Placeholder
 		}
 
+		// Terminal cursors occupy a cell. When TextInput is auto-sized, rendering only
+		// props.Value makes the content rect exactly as wide as the value, so CursorX
+		// gets clamped back onto the last visible character. Add one trailing cell while
+		// focused so the cursor can sit after the current value.
+		if focused && !props.Disabled {
+			displayValue += " "
+		}
+
 		nd := ViewWith(
 			ViewProps{
 				Style:     s,

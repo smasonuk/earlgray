@@ -161,15 +161,16 @@ func TestTextInputUnfocusedNoCursor(t *testing.T) {
 	}
 
 	rt := runtime.New()
-	inputNode := TextInput(props)
-
-	// Create another focusable widget to steal focus.
 	wrapperNode := View(
 		Style{},
-		inputNode,
 		Button(ButtonProps{Label: "Button"}),
+		TextInput(props),
 	)
+
 	rt.Update(wrapperNode)
+	if rt.IsDirty() {
+		rt.Update(wrapperNode)
+	}
 
 	rt.RunLayout(80, 24)
 	buf := screen.NewBuffer(80, 24)
@@ -178,5 +179,47 @@ func TestTextInputUnfocusedNoCursor(t *testing.T) {
 	_, _, visible := rt.Cursor()
 	if visible {
 		t.Error("unfocused TextInput should not request cursor")
+	}
+}
+
+func TestTextInputFocusedCursorSitsAfterValueForAutoWidth(t *testing.T) {
+	rt := runtime.New()
+
+	inputNode := TextInput(TextInputProps{
+		Value: "a",
+		Style: Style{
+			Border: BorderAll,
+		},
+	})
+	root := View(Style{Direction: Column}, inputNode)
+
+	rt.Update(root)
+	if rt.IsDirty() {
+		rt.Update(root)
+	}
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	x, y, visible := rt.Cursor()
+	if !visible {
+		t.Fatal("focused TextInput should request cursor")
+	}
+
+	// Auto-sized bordered input:
+	// - border at x=0
+	// - content starts at x=1
+	// - value "a" is drawn at x=1
+	// - cursor should sit after it at x=2, not clamped back onto x=1
+	if x != 2 || y != 1 {
+		t.Fatalf("cursor = (%d,%d), want (2,1)", x, y)
+	}
+
+	if got := buf.At(1, 1).Rune; got != 'a' {
+		t.Fatalf("value rune at (1,1) = %q, want 'a'", got)
+	}
+	if got := buf.At(2, 1).Rune; got != ' ' {
+		t.Fatalf("cursor cell at (2,1) should be blank, got %q", got)
 	}
 }
