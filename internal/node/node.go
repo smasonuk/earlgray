@@ -17,6 +17,7 @@ const (
 	ComponentKind             // a function component
 	OverlayKind               // stacks children on top of each other
 	TextPanelKind             // a scrollable text panel
+	TextAreaKind              // editable multi-line text area
 )
 
 // TextAlign controls text alignment within its container.
@@ -62,6 +63,27 @@ type TextPanelOptions struct {
 	InitialScrollY   int
 }
 
+// TextAreaOptions holds options for editable multi-line text areas.
+type TextAreaOptions struct {
+	Placeholder string
+
+	// WordWrap wraps long logical lines to the textarea content width.
+	// When false, long lines are horizontally clipped and Left/Right scrolling is used.
+	WordWrap bool
+
+	// ShowScrollbar draws a vertical scrollbar when content exceeds the viewport.
+	ShowScrollbar bool
+
+	// OnChange receives edited text. If nil, edit keys are ignored.
+	OnChange func(string)
+
+	// OnSubmit is called by Ctrl+Enter when SubmitOnCtrlEnter is true.
+	// Plain Enter inserts a newline.
+	OnSubmit func(string)
+
+	SubmitOnCtrlEnter bool
+}
+
 // Node is the internal concrete node type.
 type Node struct {
 	Kind          Kind
@@ -72,6 +94,7 @@ type Node struct {
 	Spans         []TextSpan       // rich text spans (RichTextKind)
 	TextOpts      TextOptions      // text options (TextKind)
 	TextPanelOpts TextPanelOptions // text panel options (TextPanelKind)
+	TextAreaOpts  TextAreaOptions  // text area options (TextAreaKind)
 	CompFn        func() *Node     // component render function (ComponentKind)
 	CompID        uintptr          // identity of component function (for reconciliation)
 	OnKey         KeyHandler       // optional key handler (ViewKind)

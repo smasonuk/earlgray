@@ -86,7 +86,7 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 		}}
 	}
 
-	if nd.Kind == node.TextPanelKind {
+	if nd.Kind == node.TextPanelKind || nd.Kind == node.TextAreaKind {
 		result := styledBoxResult(nd.Style, c, ox, oy)
 		return &Tree{Result: result}
 	}
@@ -414,6 +414,43 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		}
 
 		cw, ch := measureTextPanelIntrinsic(nd.Text, nd.TextPanelOpts, innerMaxW, innerMaxH)
+
+		w = cw + ins.Left + ins.Right
+		h = ch + ins.Top + ins.Bottom
+
+		if s.Width.Kind == style.DimCells {
+			w = s.Width.Value
+		}
+		if s.Height.Kind == style.DimCells {
+			h = s.Height.Value
+		}
+
+		w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
+		return w, h
+
+	case node.TextAreaKind:
+		s := nd.Style
+		bIns := s.Border.Insets()
+		ins := addInsets(s.Padding, bIns)
+
+		innerMaxW := maxW - ins.Left - ins.Right
+		innerMaxH := maxH - ins.Top - ins.Bottom
+		if innerMaxW < 0 {
+			innerMaxW = 0
+		}
+		if innerMaxH < 0 {
+			innerMaxH = 0
+		}
+
+		text := nd.Text
+		if text == "" {
+			text = nd.TextAreaOpts.Placeholder
+		}
+
+		cw, ch := measureTextPanelIntrinsic(text, node.TextPanelOptions{
+			WordWrap:      nd.TextAreaOpts.WordWrap,
+			ShowScrollbar: nd.TextAreaOpts.ShowScrollbar,
+		}, innerMaxW, innerMaxH)
 
 		w = cw + ins.Left + ins.Right
 		h = ch + ins.Top + ins.Bottom

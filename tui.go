@@ -924,6 +924,81 @@ func TextInput(props TextInputProps) Node {
 	})
 }
 
+// TextAreaProps configures a TextArea widget.
+type TextAreaProps struct {
+	Value       string
+	OnChange    func(string)
+	OnSubmit    func(string)
+	Placeholder string
+
+	// Style is the base style for the textarea's focusable view.
+	Style Style
+
+	// FocusedStyle overlays only visual attributes when the textarea is focused:
+	// Foreground, Background, Bold, Italic, and Underline.
+	// Layout fields such as Width, Height, Padding, Gap, Border, and FlexGrow
+	// are intentionally ignored.
+	FocusedStyle Style
+
+	// NoWordWrap disables word wrapping. When true, long lines scroll horizontally.
+	// By default TextArea word-wraps.
+	NoWordWrap bool
+
+	// ShowScrollbar draws a vertical scrollbar when content exceeds the viewport.
+	ShowScrollbar bool
+
+	// SubmitOnCtrlEnter calls OnSubmit on Ctrl+Enter.
+	// Plain Enter always inserts a newline.
+	SubmitOnCtrlEnter bool
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+// TextArea creates a focusable editable multi-line text input.
+//
+// TextArea is a controlled component: pass Value and receive edits through
+// OnChange. The parent is responsible for updating state.
+//
+// Keyboard behavior:
+//   - Rune keys insert text.
+//   - Enter inserts a newline.
+//   - Ctrl+Enter calls OnSubmit when SubmitOnCtrlEnter is true.
+//   - Backspace/Delete remove text.
+//   - Left/Right move by rune.
+//   - Up/Down move by visual line.
+//   - PgUp/PgDown move by viewport page.
+//   - Home/End move to start/end of the current visual line.
+//
+// By default TextArea word-wraps. Set NoWordWrap to enable horizontal scrolling.
+func TextArea(props TextAreaProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		s := props.Style
+		if focused {
+			s = overlayVisualStyle(props.Style, props.FocusedStyle)
+		}
+
+		return &inode.Node{
+			Kind:      inode.TextAreaKind,
+			Text:      props.Value,
+			Style:     s,
+			Focusable: !props.Disabled,
+			AutoFocus: props.AutoFocus,
+			Disabled:  props.Disabled,
+			TextAreaOpts: inode.TextAreaOptions{
+				Placeholder:       props.Placeholder,
+				WordWrap:          !props.NoWordWrap,
+				ShowScrollbar:     props.ShowScrollbar,
+				OnChange:          props.OnChange,
+				OnSubmit:          props.OnSubmit,
+				SubmitOnCtrlEnter: props.SubmitOnCtrlEnter,
+			},
+		}
+	})
+}
+
 // ListProps configures a List widget.
 type ListProps struct {
 	Items         []string

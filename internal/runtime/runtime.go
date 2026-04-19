@@ -53,6 +53,9 @@ type Instance struct {
 	scrollY            int
 	textPanelResetKey  string
 	textPanelScrollSet bool
+
+	// Cursor state for editable text areas.
+	textAreaCursor int
 }
 
 // cursorState holds the cursor position requested by the most recently rendered
@@ -357,6 +360,14 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			return true
 		}
 
+		if r.focused.nd != nil &&
+			r.focused.nd.Kind == node.TextAreaKind &&
+			!r.focused.nd.Disabled &&
+			handleTextAreaKey(r.focused, press) {
+			r.MarkDirty()
+			return true
+		}
+
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
@@ -405,6 +416,19 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 				consumed = true
 			}
 		}
+
+		for ta := hit; ta != nil; ta = ta.parent {
+			if ta.nd != nil && ta.nd.Kind == node.TextAreaKind && !ta.nd.Disabled {
+				if handleTextAreaClick(ta, m.X-ta.layout.Content.X, m.Y-ta.layout.Content.Y) {
+					r.MarkDirty()
+					consumed = true
+				}
+				break
+			}
+			if ta == focusRoot {
+				break
+			}
+		}
 	}
 
 	// Wheel: scroll the hit TextPanel (or nearest ancestor TextPanel).
@@ -423,6 +447,19 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 				}
 				break
 			}
+
+			if tp.nd != nil && tp.nd.Kind == node.TextAreaKind && !tp.nd.Disabled {
+				delta := 1
+				if m.Button&input.MouseWheelUp != 0 {
+					delta = -1
+				}
+				if scrollTextArea(tp, delta) {
+					r.MarkDirty()
+					consumed = true
+				}
+				break
+			}
+
 			if tp == focusRoot {
 				break
 			}
@@ -754,6 +791,9 @@ func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
 	if n.Kind == node.TextPanelKind {
 		resetTextPanelState(inst)
 	}
+	if n.Kind == node.TextAreaKind {
+		resetTextAreaState(inst)
+	}
 
 	// For component nodes, render the component and mount its output.
 	if n.Kind == node.ComponentKind {
@@ -979,6 +1019,16 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 		drawBorders(buf, r, s.Border, fillStyle)
 
 		renderTextPanel(inst, buf, content, s)
+		return
+	}
+
+	if inst.nd.Kind == node.TextAreaKind {
+		s := style.MergeVisual(inherited, inst.nd.Style)
+		fillStyle := screenCellStyleFromStyle(s)
+		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
+
+		renderTextArea(inst, buf, content, s, cursor)
 		return
 	}
 
