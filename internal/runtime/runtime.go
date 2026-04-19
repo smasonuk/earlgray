@@ -57,6 +57,14 @@ type Instance struct {
 	// Cursor state for editable text areas.
 	textAreaCursor int
 
+	// textAreaSelectionAnchor is the fixed end of the current text selection.
+	// -1 means no active selection. When >= 0, the selected range is
+	// [min(anchor, cursor), max(anchor, cursor)).
+	textAreaSelectionAnchor int
+
+	// textAreaDragging is true while the user is drag-selecting with the mouse.
+	textAreaDragging bool
+
 	// Whether the next textarea render should force the cursor into view.
 	// Mouse-wheel scrolling intentionally clears this, so users can scroll
 	// away from the cursor without the view snapping back.
@@ -454,6 +462,27 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 			if ta == focusRoot {
 				break
 			}
+		}
+	}
+
+	// Left motion: extend textarea drag selection.
+	if action == input.ActionMotion && m.Button&input.MouseLeft != 0 {
+		if r.focused != nil && r.focused.nd != nil &&
+			r.focused.nd.Kind == node.TextAreaKind && !r.focused.nd.Disabled &&
+			r.focused.textAreaDragging {
+			localX := m.X - r.focused.layout.Content.X
+			localY := m.Y - r.focused.layout.Content.Y
+			if handleTextAreaPointer(r.focused, localX, localY, true) {
+				r.MarkDirty()
+				consumed = true
+			}
+		}
+	}
+
+	// Left release: stop textarea drag selection.
+	if action == input.ActionRelease {
+		if r.focused != nil && r.focused.nd != nil && r.focused.nd.Kind == node.TextAreaKind {
+			r.focused.textAreaDragging = false
 		}
 	}
 

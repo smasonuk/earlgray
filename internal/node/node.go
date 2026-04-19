@@ -82,6 +82,10 @@ type TextAreaOptions struct {
 	OnSubmit func(string)
 
 	SubmitOnCtrlEnter bool
+
+	// OnCopy is called with the selected text when the user presses Ctrl+C
+	// and there is a non-empty selection.
+	OnCopy func(string)
 }
 
 // Node is the internal concrete node type.

@@ -951,6 +951,11 @@ type TextAreaProps struct {
 	// Plain Enter always inserts a newline.
 	SubmitOnCtrlEnter bool
 
+	// OnCopy is called with the selected text when the user presses Ctrl+C
+	// and there is a non-empty selection. Use RunWithOptions{DisableCtrlCQuit: true}
+	// so that Ctrl+C is delivered to the textarea rather than quitting.
+	OnCopy func(string)
+
 	AutoFocus bool
 	Disabled  bool
 }
@@ -994,6 +999,7 @@ func TextArea(props TextAreaProps) Node {
 				OnChange:          props.OnChange,
 				OnSubmit:          props.OnSubmit,
 				SubmitOnCtrlEnter: props.SubmitOnCtrlEnter,
+				OnCopy:            props.OnCopy,
 			},
 		}
 	})

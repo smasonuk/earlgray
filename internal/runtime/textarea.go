@@ -1,12 +1,13 @@
 package runtime
 
 import (
+	"strings"
+
 	"github.com/mattn/go-runewidth"
 	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/screen"
 	"github.com/smason/earlgray/internal/style"
-	"strings"
 )
 
 type textAreaVisualLine struct {
@@ -21,7 +22,52 @@ func resetTextAreaState(inst *Instance) {
 	inst.scrollX = 0
 	inst.scrollY = 0
 	inst.textAreaCursor = len([]rune(inst.nd.Text))
+	inst.textAreaSelectionAnchor = -1
+	inst.textAreaDragging = false
 	inst.textAreaEnsureCursorVisible = true
+}
+
+func textAreaClearSelection(inst *Instance) {
+	inst.textAreaSelectionAnchor = -1
+}
+
+// textAreaSelectionRange returns the normalized [start, end) selection range.
+// Returns ok=false if there is no anchor or the selection is empty.
+func textAreaSelectionRange(inst *Instance, runeCount int) (start int, end int, ok bool) {
+	if inst.textAreaSelectionAnchor < 0 {
+		return 0, 0, false
+	}
+	anchor := clampIntRuntime(inst.textAreaSelectionAnchor, 0, runeCount)
+	cursor := clampIntRuntime(inst.textAreaCursor, 0, runeCount)
+	if anchor == cursor {
+		return 0, 0, false
+	}
+	if anchor < cursor {
+		return anchor, cursor, true
+	}
+	return cursor, anchor, true
+}
+
+// textAreaSelectedText returns the selected text if there is a non-empty selection.
+func textAreaSelectedText(inst *Instance, runes []rune) (string, bool) {
+	start, end, ok := textAreaSelectionRange(inst, len(runes))
+	if !ok {
+		return "", false
+	}
+	return string(runes[start:end]), true
+}
+
+// textAreaDeleteSelectionRunes deletes the selected range from runes.
+// Returns the new rune slice, the cursor position for subsequent insertion, and whether a deletion occurred.
+func textAreaDeleteSelectionRunes(inst *Instance, runes []rune) ([]rune, int, bool) {
+	start, end, ok := textAreaSelectionRange(inst, len(runes))
+	if !ok {
+		return nil, 0, false
+	}
+	next := make([]rune, 0, len(runes)-(end-start))
+	next = append(next, runes[:start]...)
+	next = append(next, runes[end:]...)
+	return next, start, true
 }
 
 func textAreaDisplayText(value string, opts node.TextAreaOptions) string {
@@ -291,9 +337,16 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 	}
 	lines := textAreaVisualLines(value, opts.WordWrap, viewportW)
 
-	setCursor := func(next int) bool {
+	moveCursor := func(next int, extendSelection bool) bool {
 		next = clampIntRuntime(next, 0, len(runes))
-		if next == inst.textAreaCursor {
+		if extendSelection {
+			if inst.textAreaSelectionAnchor < 0 {
+				inst.textAreaSelectionAnchor = inst.textAreaCursor
+			}
+		} else {
+			textAreaClearSelection(inst)
+		}
+		if next == inst.textAreaCursor && !extendSelection {
 			return false
 		}
 		inst.textAreaCursor = next
@@ -308,30 +361,57 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 		}
 		opts.OnChange(string(nextRunes))
 		inst.textAreaCursor = clampIntRuntime(nextCursor, 0, len(nextRunes))
+		textAreaClearSelection(inst)
 		inst.textAreaEnsureCursorVisible = true
 		return true
 	}
 
+	insertRunes := func(inserted []rune) bool {
+		base := runes
+		insertAt := cursor
+		if nextBase, nextCursor, deleted := textAreaDeleteSelectionRunes(inst, runes); deleted {
+			base = nextBase
+			insertAt = nextCursor
+		}
+		next := make([]rune, 0, len(base)+len(inserted))
+		next = append(next, base[:insertAt]...)
+		next = append(next, inserted...)
+		next = append(next, base[insertAt:]...)
+		return replace(next, insertAt+len(inserted))
+	}
+
+	extend := press.Mod&input.ModShift != 0
+
 	switch press.Key {
+	case input.KeyCtrlC:
+		selected, ok := textAreaSelectedText(inst, runes)
+		if !ok {
+			return false
+		}
+		if opts.OnCopy != nil {
+			opts.OnCopy(selected)
+		}
+		return true
+
 	case input.KeyLeft:
-		return setCursor(cursor - 1)
+		return moveCursor(cursor-1, extend)
 
 	case input.KeyRight:
-		return setCursor(cursor + 1)
+		return moveCursor(cursor+1, extend)
 
 	case input.KeyUp:
 		row, x := textAreaCursorLineAndX(lines, runes, cursor)
 		if row <= 0 {
 			return false
 		}
-		return setCursor(textAreaCursorIndexAt(lines, runes, row-1, x))
+		return moveCursor(textAreaCursorIndexAt(lines, runes, row-1, x), extend)
 
 	case input.KeyDown:
 		row, x := textAreaCursorLineAndX(lines, runes, cursor)
 		if row >= len(lines)-1 {
 			return false
 		}
-		return setCursor(textAreaCursorIndexAt(lines, runes, row+1, x))
+		return moveCursor(textAreaCursorIndexAt(lines, runes, row+1, x), extend)
 
 	case input.KeyPgUp:
 		row, x := textAreaCursorLineAndX(lines, runes, cursor)
@@ -339,7 +419,7 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 		if nextRow < 0 {
 			nextRow = 0
 		}
-		return setCursor(textAreaCursorIndexAt(lines, runes, nextRow, x))
+		return moveCursor(textAreaCursorIndexAt(lines, runes, nextRow, x), extend)
 
 	case input.KeyPgDown:
 		row, x := textAreaCursorLineAndX(lines, runes, cursor)
@@ -347,17 +427,22 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 		if nextRow >= len(lines) {
 			nextRow = len(lines) - 1
 		}
-		return setCursor(textAreaCursorIndexAt(lines, runes, nextRow, x))
+		return moveCursor(textAreaCursorIndexAt(lines, runes, nextRow, x), extend)
 
 	case input.KeyHome:
 		row, _ := textAreaCursorLineAndX(lines, runes, cursor)
-		return setCursor(lines[row].Start)
+		return moveCursor(lines[row].Start, extend)
 
 	case input.KeyEnd:
 		row, _ := textAreaCursorLineAndX(lines, runes, cursor)
-		return setCursor(lines[row].End)
+		return moveCursor(lines[row].End, extend)
 
 	case input.KeyBackspace:
+		if _, _, hasSelection := textAreaSelectionRange(inst, len(runes)); hasSelection {
+			if nextBase, nextCursor, deleted := textAreaDeleteSelectionRunes(inst, runes); deleted {
+				return replace(nextBase, nextCursor)
+			}
+		}
 		if cursor == 0 {
 			return false
 		}
@@ -367,6 +452,11 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 		return replace(next, cursor-1)
 
 	case input.KeyDelete:
+		if _, _, hasSelection := textAreaSelectionRange(inst, len(runes)); hasSelection {
+			if nextBase, nextCursor, deleted := textAreaDeleteSelectionRunes(inst, runes); deleted {
+				return replace(nextBase, nextCursor)
+			}
+		}
 		if cursor >= len(runes) {
 			return false
 		}
@@ -383,22 +473,13 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 			opts.OnSubmit(value)
 			return true
 		}
-
-		next := make([]rune, 0, len(runes)+1)
-		next = append(next, runes[:cursor]...)
-		next = append(next, '\n')
-		next = append(next, runes[cursor:]...)
-		return replace(next, cursor+1)
+		return insertRunes([]rune{'\n'})
 
 	case input.KeyRune:
 		if press.Rune == 0 {
 			return false
 		}
-		next := make([]rune, 0, len(runes)+1)
-		next = append(next, runes[:cursor]...)
-		next = append(next, press.Rune)
-		next = append(next, runes[cursor:]...)
-		return replace(next, cursor+1)
+		return insertRunes([]rune{press.Rune})
 	}
 
 	return false
@@ -424,21 +505,30 @@ func handleTextAreaPaste(inst *Instance, text string) bool {
 
 	value := inst.nd.Text
 	runes := []rune(value)
-	cursor := clampIntRuntime(inst.textAreaCursor, 0, len(runes))
 
-	next := make([]rune, 0, len(runes)+len(pastedRunes))
-	next = append(next, runes[:cursor]...)
+	base := runes
+	insertAt := clampIntRuntime(inst.textAreaCursor, 0, len(runes))
+	if nextBase, nextCursor, deleted := textAreaDeleteSelectionRunes(inst, runes); deleted {
+		base = nextBase
+		insertAt = nextCursor
+	}
+
+	next := make([]rune, 0, len(base)+len(pastedRunes))
+	next = append(next, base[:insertAt]...)
 	next = append(next, pastedRunes...)
-	next = append(next, runes[cursor:]...)
+	next = append(next, base[insertAt:]...)
 
 	opts.OnChange(string(next))
-	inst.textAreaCursor = cursor + len(pastedRunes)
+	inst.textAreaCursor = insertAt + len(pastedRunes)
+	textAreaClearSelection(inst)
 	inst.textAreaEnsureCursorVisible = true
 
 	return true
 }
 
-func handleTextAreaClick(inst *Instance, localX, localY int) bool {
+// handleTextAreaPointer converts local mouse coordinates to a rune index and
+// updates cursor and selection anchor accordingly.
+func handleTextAreaPointer(inst *Instance, localX, localY int, extendSelection bool) bool {
 	if inst == nil || inst.nd == nil || inst.nd.Kind != node.TextAreaKind {
 		return false
 	}
@@ -470,10 +560,26 @@ func handleTextAreaClick(inst *Instance, localX, localY int) bool {
 		x += inst.scrollX
 	}
 
-	inst.textAreaCursor = textAreaCursorIndexAt(lines, runes, row, x)
+	idx := textAreaCursorIndexAt(lines, runes, row, x)
+
+	if extendSelection {
+		if inst.textAreaSelectionAnchor < 0 {
+			inst.textAreaSelectionAnchor = inst.textAreaCursor
+		}
+	} else {
+		inst.textAreaSelectionAnchor = idx
+	}
+
+	inst.textAreaCursor = idx
 	inst.textAreaEnsureCursorVisible = true
 	textAreaEnsureCursorVisible(inst, lines, runes, viewportW)
 	return true
+}
+
+func handleTextAreaClick(inst *Instance, localX, localY int) bool {
+	textAreaClearSelection(inst)
+	inst.textAreaDragging = true
+	return handleTextAreaPointer(inst, localX, localY, false)
 }
 
 func scrollTextArea(inst *Instance, delta int) bool {
@@ -504,6 +610,57 @@ func scrollTextArea(inst *Instance, delta int) bool {
 		return true
 	}
 	return false
+}
+
+// drawTextAreaLine renders one visual line of the textarea with optional selection highlighting.
+func drawTextAreaLine(
+	buf *screen.Buffer,
+	content style.Rect,
+	viewportW int,
+	line textAreaVisualLine,
+	valueRunes []rune,
+	scrollX int,
+	wordWrap bool,
+	textStyle screen.CellStyle,
+	selectedStyle screen.CellStyle,
+	selStart int,
+	selEnd int,
+	hasSelection bool,
+	y int,
+) {
+	if !hasSelection || selEnd <= line.Start || selStart >= line.End {
+		if wordWrap {
+			buf.DrawTextClipped(content.X, y, line.Text, textStyle, content.X, content.Y, viewportW, content.H)
+		} else {
+			buf.DrawTextClipped(content.X-scrollX, y, line.Text, textStyle, content.X, content.Y, viewportW, content.H)
+		}
+		return
+	}
+
+	a := selStart
+	if a < line.Start {
+		a = line.Start
+	}
+	b := selEnd
+	if b > line.End {
+		b = line.End
+	}
+
+	pre := string(valueRunes[line.Start:a])
+	mid := string(valueRunes[a:b])
+	post := string(valueRunes[b:line.End])
+
+	preWidth := runewidth.StringWidth(pre)
+	midWidth := runewidth.StringWidth(mid)
+
+	baseX := content.X
+	if !wordWrap {
+		baseX = content.X - scrollX
+	}
+
+	buf.DrawTextClipped(baseX, y, pre, textStyle, content.X, content.Y, viewportW, content.H)
+	buf.DrawTextClipped(baseX+preWidth, y, mid, selectedStyle, content.X, content.Y, viewportW, content.H)
+	buf.DrawTextClipped(baseX+preWidth+midWidth, y, post, textStyle, content.X, content.Y, viewportW, content.H)
 }
 
 func renderTextArea(inst *Instance, buf *screen.Buffer, content style.Rect, s style.Style, cursor *cursorState) {
@@ -552,6 +709,14 @@ func renderTextArea(inst *Instance, buf *screen.Buffer, content style.Rect, s st
 	}
 
 	textStyle := screenCellStyleFromStyle(s)
+	selectedStyle := textStyle
+	selectedStyle.Reverse = true
+
+	// Determine selection range; only apply to real value, not placeholder text.
+	selStart, selEnd, hasSelection := 0, 0, false
+	if value != "" {
+		selStart, selEnd, hasSelection = textAreaSelectionRange(inst, len(valueRunes))
+	}
 
 	for row := 0; row < content.H; row++ {
 		lineIdx := inst.scrollY + row
@@ -562,11 +727,9 @@ func renderTextArea(inst *Instance, buf *screen.Buffer, content style.Rect, s st
 		line := lines[lineIdx]
 		y := content.Y + row
 
-		if opts.WordWrap {
-			buf.DrawTextClipped(content.X, y, line.Text, textStyle, content.X, content.Y, viewportW, content.H)
-		} else {
-			buf.DrawTextClipped(content.X-inst.scrollX, y, line.Text, textStyle, content.X, content.Y, viewportW, content.H)
-		}
+		drawTextAreaLine(buf, content, viewportW, line, valueRunes,
+			inst.scrollX, opts.WordWrap, textStyle, selectedStyle,
+			selStart, selEnd, hasSelection, y)
 	}
 
 	if showScrollbar {
