@@ -56,6 +56,11 @@ type Instance struct {
 
 	// Cursor state for editable text areas.
 	textAreaCursor int
+
+	// Whether the next textarea render should force the cursor into view.
+	// Mouse-wheel scrolling intentionally clears this, so users can scroll
+	// away from the cursor without the view snapping back.
+	textAreaEnsureCursorVisible bool
 }
 
 // cursorState holds the cursor position requested by the most recently rendered

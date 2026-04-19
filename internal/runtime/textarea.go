@@ -21,6 +21,7 @@ func resetTextAreaState(inst *Instance) {
 	inst.scrollX = 0
 	inst.scrollY = 0
 	inst.textAreaCursor = len([]rune(inst.nd.Text))
+	inst.textAreaEnsureCursorVisible = true
 }
 
 func textAreaDisplayText(value string, opts node.TextAreaOptions) string {
@@ -296,6 +297,7 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 			return false
 		}
 		inst.textAreaCursor = next
+		inst.textAreaEnsureCursorVisible = true
 		textAreaEnsureCursorVisible(inst, lines, runes, viewportW)
 		return true
 	}
@@ -306,6 +308,7 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 		}
 		opts.OnChange(string(nextRunes))
 		inst.textAreaCursor = clampIntRuntime(nextCursor, 0, len(nextRunes))
+		inst.textAreaEnsureCursorVisible = true
 		return true
 	}
 
@@ -430,15 +433,7 @@ func handleTextAreaPaste(inst *Instance, text string) bool {
 
 	opts.OnChange(string(next))
 	inst.textAreaCursor = cursor + len(pastedRunes)
-
-	// Update scroll to keep cursor visible.
-	content := inst.layout.Content
-	viewportW := textAreaViewportWidth(string(next), opts, content.W, content.H)
-	if viewportW <= 0 {
-		viewportW = 1
-	}
-	lines := textAreaVisualLines(string(next), opts.WordWrap, viewportW)
-	textAreaEnsureCursorVisible(inst, lines, next, viewportW)
+	inst.textAreaEnsureCursorVisible = true
 
 	return true
 }
@@ -476,6 +471,7 @@ func handleTextAreaClick(inst *Instance, localX, localY int) bool {
 	}
 
 	inst.textAreaCursor = textAreaCursorIndexAt(lines, runes, row, x)
+	inst.textAreaEnsureCursorVisible = true
 	textAreaEnsureCursorVisible(inst, lines, runes, viewportW)
 	return true
 }
@@ -502,7 +498,12 @@ func scrollTextArea(inst *Instance, delta int) bool {
 
 	oldY := inst.scrollY
 	inst.scrollY = clampIntRuntime(inst.scrollY+delta, 0, maxY)
-	return inst.scrollY != oldY
+
+	if inst.scrollY != oldY {
+		inst.textAreaEnsureCursorVisible = false
+		return true
+	}
+	return false
 }
 
 func renderTextArea(inst *Instance, buf *screen.Buffer, content style.Rect, s style.Style, cursor *cursorState) {
@@ -544,7 +545,11 @@ func renderTextArea(inst *Instance, buf *screen.Buffer, content style.Rect, s st
 	valueRunes := []rune(value)
 	cursorLines := textAreaVisualLines(value, opts.WordWrap, viewportW)
 	inst.textAreaCursor = clampIntRuntime(inst.textAreaCursor, 0, len(valueRunes))
-	textAreaEnsureCursorVisible(inst, cursorLines, valueRunes, viewportW)
+
+	if inst.textAreaEnsureCursorVisible {
+		textAreaEnsureCursorVisible(inst, cursorLines, valueRunes, viewportW)
+		inst.textAreaEnsureCursorVisible = false
+	}
 
 	textStyle := screenCellStyleFromStyle(s)
 
