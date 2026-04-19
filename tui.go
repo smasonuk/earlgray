@@ -1687,6 +1687,10 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 				if rt.HandleEvent(ev) {
 					rt.MarkDirty()
 				}
+			case event.PasteKind:
+				if rt.HandleEvent(ev) {
+					rt.MarkDirty()
+				}
 			case event.MouseKind:
 				if rt.HandleEvent(ev) {
 					rt.MarkDirty()

@@ -311,6 +311,14 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 		return false
 	}
 
+	if ev.Kind == event.PasteKind {
+		if r.handlePaste(ev.Paste.Text) {
+			r.MarkDirty()
+			return true
+		}
+		return false
+	}
+
 	if ev.Kind == event.MouseKind {
 		return r.handleMouse(ev.Mouse)
 	}
@@ -383,6 +391,19 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 
 	// No focused node: fall back to depth-first delivery within the active focus scope.
 	return deliverKey(root, ev.Key)
+}
+
+func (r *Runtime) handlePaste(text string) bool {
+	if text == "" {
+		return false
+	}
+	if r.focused == nil {
+		return false
+	}
+	if r.focused.nd != nil && r.focused.nd.Kind == node.TextAreaKind && !r.focused.nd.Disabled {
+		return handleTextAreaPaste(r.focused, text)
+	}
+	return false
 }
 
 // handleMouse dispatches a mouse event: hit-tests, focuses clicked nodes,

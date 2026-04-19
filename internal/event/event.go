@@ -16,6 +16,7 @@ const (
 	BlurKind        // terminal lost focus
 	QuitKind        // quit signal
 	MouseKind       // mouse button or wheel event
+	PasteKind       // bracketed paste event
 )
 
 // Key holds key event data.
@@ -23,6 +24,11 @@ type Key struct {
 	Key  tcell.Key     // key code
 	Rune rune          // rune for printable keys
 	Mod  tcell.ModMask // modifier keys
+}
+
+// Paste holds bracketed paste data.
+type Paste struct {
+	Text string
 }
 
 // IsTab reports whether this key event is a Tab key press (forward traversal).
@@ -49,29 +55,33 @@ func (k Key) IsCtrlC() bool {
 
 // NormalizeKey converts a tcell key to a shared Key enum value.
 // Returns KeyUnknown for unrecognized keys.
-func NormalizeKey(tcellKey tcell.Key, rune rune, mod tcell.ModMask) input.Key {
-	if (tcellKey == tcell.KeyCtrlC) || ((rune == 'c' || rune == 'C') && mod&tcell.ModCtrl != 0) {
+func NormalizeKey(tcellKey tcell.Key, r rune, mod tcell.ModMask) input.Key {
+	if (tcellKey == tcell.KeyCtrlC) || ((r == 'c' || r == 'C') && mod&tcell.ModCtrl != 0) {
 		return input.KeyCtrlC
 	}
 
-	if rune != 0 && tcellKey != tcell.KeyRune {
-		return input.KeyRune
+	// Normalize Enter/Tab/Backspace variants before rune-based fallbacks.
+	switch tcellKey {
+	case tcell.KeyEnter, tcell.KeyCtrlJ:
+		return input.KeyEnter
+	case tcell.KeyTab, tcell.KeyCtrlI:
+		return input.KeyTab
+	case tcell.KeyBackspace, tcell.KeyBackspace2:
+		return input.KeyBackspace
+	case tcell.KeyDelete:
+		return input.KeyDelete
 	}
 
-	switch tcellKey {
-	case tcell.KeyRune:
-		if rune != 0 {
+	if tcellKey == tcell.KeyRune {
+		if r != 0 {
 			return input.KeyRune
 		}
 		return input.KeyUnknown
-	case tcell.KeyEnter:
-		return input.KeyEnter
+	}
+
+	switch tcellKey {
 	case tcell.KeyEsc:
 		return input.KeyEsc
-	case tcell.KeyBackspace, tcell.KeyBackspace2:
-		return input.KeyBackspace
-	case tcell.KeyTab:
-		return input.KeyTab
 	case tcell.KeyUp:
 		return input.KeyUp
 	case tcell.KeyDown:
@@ -88,11 +98,13 @@ func NormalizeKey(tcellKey tcell.Key, rune rune, mod tcell.ModMask) input.Key {
 		return input.KeyPgUp
 	case tcell.KeyPgDn:
 		return input.KeyPgDown
-	case tcell.KeyDelete:
-		return input.KeyDelete
 	case tcell.KeyInsert:
 		return input.KeyInsert
 	default:
+		// Fallback for terminal-specific keys that carry a printable rune.
+		if r != 0 {
+			return input.KeyRune
+		}
 		return input.KeyUnknown
 	}
 }
@@ -109,6 +121,7 @@ type Event struct {
 	Kind   Kind
 	Key    Key   // valid if Kind == KeyKind
 	Mouse  Mouse // valid if Kind == MouseKind
+	Paste  Paste // valid if Kind == PasteKind
 	Width  int   // valid if Kind == ResizeKind
 	Height int
 }

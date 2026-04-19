@@ -93,10 +93,10 @@ func TestNormalizeKeyUnknown(t *testing.T) {
 }
 
 func TestNormalizeKeyRuneWithNonRuneKey(t *testing.T) {
-	// If we have a rune but tcellKey is not KeyRune, still return KeyRune
+	// If we have a rune but tcellKey is a known special key, prioritize the special key.
 	got := NormalizeKey(tcell.KeyEnter, 'x', 0)
-	if got != input.KeyRune {
-		t.Errorf("NormalizeKey(KeyEnter, 'x') = %v, want KeyRune", got)
+	if got != input.KeyEnter {
+		t.Errorf("NormalizeKey(KeyEnter, 'x') = %v, want KeyEnter", got)
 	}
 }
 

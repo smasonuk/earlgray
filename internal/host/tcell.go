@@ -5,6 +5,7 @@ import (
 	"github.com/smason/earlgray/internal/event"
 	"github.com/smason/earlgray/internal/input"
 	"github.com/smason/earlgray/internal/screen"
+	"strings"
 )
 
 // TcellHost wraps a tcell.Screen to implement Host.
@@ -27,11 +28,13 @@ func (h *TcellHost) Init() error {
 		return err
 	}
 	h.s.EnableMouse()
+	h.s.EnablePaste()
 	return nil
 }
 
 // Close finalizes the tcell screen.
 func (h *TcellHost) Close() error {
+	h.s.DisablePaste()
 	h.s.Fini()
 	return nil
 }
@@ -46,6 +49,12 @@ func (h *TcellHost) PollEvent() event.Event {
 	for {
 		ev := h.s.PollEvent()
 		switch e := ev.(type) {
+		case *tcell.EventPaste:
+			if e.Start() {
+				return h.pollPaste()
+			}
+			continue
+
 		case *tcell.EventKey:
 			return event.Event{
 				Kind: event.KeyKind,
@@ -83,6 +92,39 @@ func (h *TcellHost) PollEvent() event.Event {
 			return event.Event{Kind: event.QuitKind}
 		}
 		// Ignore other event types - loop again.
+	}
+}
+
+func (h *TcellHost) pollPaste() event.Event {
+	var b strings.Builder
+	for {
+		ev := h.s.PollEvent()
+		switch e := ev.(type) {
+		case *tcell.EventKey:
+			appendPasteKey(&b, e)
+		case *tcell.EventPaste:
+			if !e.Start() {
+				return event.Event{
+					Kind:  event.PasteKind,
+					Paste: event.Paste{Text: b.String()},
+				}
+			}
+		case nil:
+			return event.Event{Kind: event.QuitKind}
+		}
+	}
+}
+
+func appendPasteKey(b *strings.Builder, e *tcell.EventKey) {
+	if e.Key() == tcell.KeyRune {
+		b.WriteRune(e.Rune())
+		return
+	}
+	switch e.Key() {
+	case tcell.KeyEnter, tcell.KeyCtrlJ:
+		b.WriteRune('\n')
+	case tcell.KeyTab, tcell.KeyCtrlI:
+		b.WriteRune('\t')
 	}
 }
 

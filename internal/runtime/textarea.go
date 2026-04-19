@@ -6,6 +6,7 @@ import (
 	"github.com/smason/earlgray/internal/node"
 	"github.com/smason/earlgray/internal/screen"
 	"github.com/smason/earlgray/internal/style"
+	"strings"
 )
 
 type textAreaVisualLine struct {
@@ -398,6 +399,48 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 	}
 
 	return false
+}
+
+func handleTextAreaPaste(inst *Instance, text string) bool {
+	if inst == nil || inst.nd == nil || inst.nd.Kind != node.TextAreaKind {
+		return false
+	}
+	if inst.nd.Disabled {
+		return false
+	}
+	opts := inst.nd.TextAreaOpts
+	if opts.OnChange == nil {
+		return false
+	}
+
+	text = strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(text)
+	pastedRunes := []rune(text)
+	if len(pastedRunes) == 0 {
+		return false
+	}
+
+	value := inst.nd.Text
+	runes := []rune(value)
+	cursor := clampIntRuntime(inst.textAreaCursor, 0, len(runes))
+
+	next := make([]rune, 0, len(runes)+len(pastedRunes))
+	next = append(next, runes[:cursor]...)
+	next = append(next, pastedRunes...)
+	next = append(next, runes[cursor:]...)
+
+	opts.OnChange(string(next))
+	inst.textAreaCursor = cursor + len(pastedRunes)
+
+	// Update scroll to keep cursor visible.
+	content := inst.layout.Content
+	viewportW := textAreaViewportWidth(string(next), opts, content.W, content.H)
+	if viewportW <= 0 {
+		viewportW = 1
+	}
+	lines := textAreaVisualLines(string(next), opts.WordWrap, viewportW)
+	textAreaEnsureCursorVisible(inst, lines, next, viewportW)
+
+	return true
 }
 
 func handleTextAreaClick(inst *Instance, localX, localY int) bool {
