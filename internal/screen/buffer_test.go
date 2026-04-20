@@ -3,7 +3,7 @@ package screen
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/color"
+	"github.com/smasonuk/earlgray/internal/color"
 )
 
 func TestNewBuffer(t *testing.T) {

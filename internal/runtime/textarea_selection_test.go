@@ -3,10 +3,10 @@ package runtime
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/layout"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/layout"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 // makeTextAreaInst creates a mounted textarea instance for testing.

@@ -4,7 +4,7 @@ package testutil
 import (
 	"strings"
 
-	"github.com/smason/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 // BufferToGrid converts a Buffer to a slice of strings, one per row.

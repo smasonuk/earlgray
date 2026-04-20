@@ -4,7 +4,7 @@
 package render
 
 import (
-	"github.com/smason/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 // FlushDiff compares two buffers and sends all changes to the Differ.

@@ -2,8 +2,8 @@
 package host
 
 import (
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 // Host is the interface implemented by terminal backends.

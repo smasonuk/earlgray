@@ -3,7 +3,7 @@
 package style
 
 import (
-	"github.com/smason/earlgray/internal/color"
+	"github.com/smasonuk/earlgray/internal/color"
 )
 
 // Point represents a 2D coordinate.

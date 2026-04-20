@@ -1,4 +1,4 @@
-module github.com/smason/earlgray
+module github.com/smasonuk/earlgray
 
 go 1.25.0
 

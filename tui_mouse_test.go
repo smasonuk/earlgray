@@ -3,8 +3,8 @@ package tui
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/host"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/host"
 )
 
 func TestTextInputMouseCursorPlacement(t *testing.T) {

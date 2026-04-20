@@ -1,11 +1,11 @@
 package runtime
 
 import (
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/screen"
-	"github.com/smason/earlgray/internal/style"
-	"github.com/smason/earlgray/internal/textflow"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/textflow"
 )
 
 func resetTextPanelState(inst *Instance) {

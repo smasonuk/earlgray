@@ -6,9 +6,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/smason/earlgray/internal/color"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/color"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 // ParseText converts ANSI SGR sequences into styled text spans.

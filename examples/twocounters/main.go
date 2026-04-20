@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	tui "github.com/smason/earlgray"
+	tui "github.com/smasonuk/earlgray"
 )
 
 // Counter is a component that displays a count and responds to +/- keys.

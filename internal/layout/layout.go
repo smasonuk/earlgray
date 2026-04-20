@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/mattn/go-runewidth"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/style"
-	"github.com/smason/earlgray/internal/textflow"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/textflow"
 )
 
 // Constraints bounds the available space for a node.

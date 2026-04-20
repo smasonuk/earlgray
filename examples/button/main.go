@@ -6,7 +6,7 @@ import (
 	"os"
 	"strconv"
 
-	tui "github.com/smason/earlgray"
+	tui "github.com/smasonuk/earlgray"
 )
 
 // ButtonCounter is a component demonstrating Button widgets.

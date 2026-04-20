@@ -4,10 +4,10 @@ import (
 	"strings"
 
 	"github.com/mattn/go-runewidth"
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/screen"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 type textAreaVisualLine struct {

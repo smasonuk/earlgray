@@ -3,7 +3,7 @@ package style
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/color"
+	"github.com/smasonuk/earlgray/internal/color"
 )
 
 func TestMergeInheritsParentForeground(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/smason/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/input"
 )
 
 func TestNormalizeKeyRune(t *testing.T) {

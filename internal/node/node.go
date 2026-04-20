@@ -2,8 +2,8 @@
 package node
 
 import (
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 // Kind identifies what type of node this is.

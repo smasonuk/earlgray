@@ -7,7 +7,7 @@ Under construction.
 ## Install
 
 ```sh
-go get github.com/smason/earlgray
+go get github.com/smasonuk/earlgray
 ```
 
 ## Minimal app
@@ -19,7 +19,7 @@ import (
     "fmt"
     "os"
 
-    tui "github.com/smason/earlgray"
+    tui "github.com/smasonuk/earlgray"
 )
 
 func App() tui.Node {

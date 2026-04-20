@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	tui "github.com/smason/earlgray"
+	tui "github.com/smasonuk/earlgray"
 )
 
 func App() tui.Node {

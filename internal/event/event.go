@@ -3,7 +3,7 @@ package event
 
 import (
 	"github.com/gdamore/tcell/v2"
-	"github.com/smason/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/input"
 )
 
 // Kind identifies the type of event.

@@ -7,12 +7,12 @@ import (
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-runewidth"
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/layout"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/screen"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/layout"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 // Instance is a retained node in the component tree.

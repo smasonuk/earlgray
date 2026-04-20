@@ -2,8 +2,8 @@
 package tui
 
 import (
-	icolor "github.com/smason/earlgray/internal/color"
-	istyle "github.com/smason/earlgray/internal/style"
+	icolor "github.com/smasonuk/earlgray/internal/color"
+	istyle "github.com/smasonuk/earlgray/internal/style"
 )
 
 // Point represents a 2D coordinate.

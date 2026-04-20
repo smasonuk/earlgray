@@ -1,11 +1,12 @@
 package host
 
 import (
-	"github.com/gdamore/tcell/v2"
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/screen"
 	"strings"
+
+	"github.com/gdamore/tcell/v2"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 // TcellHost wraps a tcell.Screen to implement Host.

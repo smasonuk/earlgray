@@ -3,8 +3,8 @@ package runtime
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/node"
 )
 
 func TestTextAreaPaste(t *testing.T) {

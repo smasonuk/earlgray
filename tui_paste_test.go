@@ -3,9 +3,9 @@ package tui
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/host"
-	"github.com/smason/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/host"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 type pasteTestHost struct {

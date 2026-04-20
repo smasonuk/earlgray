@@ -3,8 +3,8 @@ package layout
 import (
 	"testing"
 
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 // helper: build a view node.

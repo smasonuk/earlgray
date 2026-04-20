@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/mattn/go-runewidth"
-	"github.com/smason/earlgray/internal/ansi"
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/host"
-	"github.com/smason/earlgray/internal/input"
-	inode "github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/render"
-	"github.com/smason/earlgray/internal/runtime"
-	"github.com/smason/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/ansi"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/host"
+	"github.com/smasonuk/earlgray/internal/input"
+	inode "github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/render"
+	"github.com/smasonuk/earlgray/internal/runtime"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 // Node is the opaque tree element returned by View, Text, Keyed, etc.

@@ -3,7 +3,7 @@ package screen
 
 import (
 	"github.com/mattn/go-runewidth"
-	"github.com/smason/earlgray/internal/color"
+	"github.com/smasonuk/earlgray/internal/color"
 )
 
 // CellStyle describes text attributes for a single cell.

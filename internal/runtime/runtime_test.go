@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/smason/earlgray/internal/event"
-	"github.com/smason/earlgray/internal/input"
-	"github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/style"
+	"github.com/smasonuk/earlgray/internal/event"
+	"github.com/smasonuk/earlgray/internal/input"
+	"github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/style"
 )
 
 // helper: make a view node.

@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	tui "github.com/smason/earlgray"
+	tui "github.com/smasonuk/earlgray"
 )
 
 func main() {

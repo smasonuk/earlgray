@@ -6,10 +6,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/gdamore/tcell/v2"
-	"github.com/smason/earlgray/internal/event"
-	inode "github.com/smason/earlgray/internal/node"
-	"github.com/smason/earlgray/internal/runtime"
-	"github.com/smason/earlgray/internal/screen"
+	"github.com/smasonuk/earlgray/internal/event"
+	inode "github.com/smasonuk/earlgray/internal/node"
+	"github.com/smasonuk/earlgray/internal/runtime"
+	"github.com/smasonuk/earlgray/internal/screen"
 )
 
 func TestOverlayVisualStyleAppliesOnlyVisualFields(t *testing.T) {
