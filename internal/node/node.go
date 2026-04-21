@@ -86,6 +86,8 @@ type TextAreaOptions struct {
 	// OnCopy is called with the selected text when the user presses Ctrl+C
 	// and there is a non-empty selection.
 	OnCopy func(string)
+
+	ReadOnly bool
 }
 
 // Node is the internal concrete node type.

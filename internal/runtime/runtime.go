@@ -482,7 +482,14 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 	// Left release: stop textarea drag selection.
 	if action == input.ActionRelease {
 		if r.focused != nil && r.focused.nd != nil && r.focused.nd.Kind == node.TextAreaKind {
-			r.focused.textAreaDragging = false
+			if r.focused.textAreaDragging {
+				r.focused.textAreaDragging = false
+				if r.focused.nd.TextAreaOpts.OnCopy != nil {
+					if text, ok := textAreaSelectedText(r.focused, []rune(r.focused.nd.Text)); ok {
+						r.focused.nd.TextAreaOpts.OnCopy(text)
+					}
+				}
+			}
 		}
 	}
 

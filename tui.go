@@ -958,6 +958,7 @@ type TextAreaProps struct {
 
 	AutoFocus bool
 	Disabled  bool
+	ReadOnly  bool
 }
 
 // TextArea creates a focusable editable multi-line text input.
@@ -1000,6 +1001,7 @@ func TextArea(props TextAreaProps) Node {
 				OnSubmit:          props.OnSubmit,
 				SubmitOnCtrlEnter: props.SubmitOnCtrlEnter,
 				OnCopy:            props.OnCopy,
+				ReadOnly:          props.ReadOnly,
 			},
 		}
 	})

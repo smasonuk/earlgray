@@ -476,6 +476,9 @@ func handleTextAreaKey(inst *Instance, press input.KeyPress) bool {
 		return insertRunes([]rune{'\n'})
 
 	case input.KeyRune:
+		if opts.ReadOnly {
+			return false
+		}
 		if press.Rune == 0 {
 			return false
 		}
@@ -736,7 +739,7 @@ func renderTextArea(inst *Instance, buf *screen.Buffer, content style.Rect, s st
 		drawTextPanelScrollbar(buf, content, len(lines), content.H, inst.scrollY, s)
 	}
 
-	if cursor != nil && inst.runtime != nil && inst.runtime.focused == inst && !inst.nd.Disabled {
+	if cursor != nil && inst.runtime != nil && inst.runtime.focused == inst && !inst.nd.Disabled && !opts.ReadOnly {
 		row, x := textAreaCursorLineAndX(cursorLines, valueRunes, inst.textAreaCursor)
 
 		cy := row - inst.scrollY
