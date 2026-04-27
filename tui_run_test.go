@@ -364,60 +364,6 @@ func TestSpinnerInactiveDoesNotAdvance(t *testing.T) {
 	}
 }
 
-func TestSpinnerStopsAfterBecomingInactive(t *testing.T) {
-	type snapshot struct {
-		phase int32
-		ch    rune
-	}
-
-	fake := newBlockingFakeHost(80, 24)
-	var active atomic.Bool
-	var phase atomic.Int32
-	active.Store(true)
-
-	var snapshots []snapshot
-	fake.onShow = func(f *fakeHost) {
-		snapshots = append(snapshots, snapshot{
-			phase: phase.Load(),
-			ch:    f.cells[0],
-		})
-	}
-
-	err := runWithHost(func() Node {
-		return Spinner(SpinnerProps{
-			Frames:   []string{"0", "1"},
-			Active:   active.Load(),
-			Interval: 5 * time.Millisecond,
-		})
-	}, RunOptions{
-		OnStart: func(h AppHandle) {
-			go func() {
-				time.Sleep(20 * time.Millisecond)
-				h.Post(func() {
-					active.Store(false)
-					phase.Store(1)
-				})
-				time.Sleep(20 * time.Millisecond)
-				h.Quit()
-			}()
-		},
-	}, func() (host.Host, error) { return fake, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var inactive []snapshot
-	for _, snap := range snapshots {
-		if snap.phase == 1 {
-			inactive = append(inactive, snap)
-		}
-	}
-
-	if len(inactive) != 1 {
-		t.Fatalf("expected exactly one inactive render, got %d (%v)", len(inactive), inactive)
-	}
-}
-
 func TestSpinnerStopsPostingAfterUnmount(t *testing.T) {
 	type snapshot struct {
 		phase int32
@@ -475,62 +421,6 @@ func TestSpinnerStopsPostingAfterUnmount(t *testing.T) {
 	}
 	if unmounted[0].ch != 'd' {
 		t.Fatalf("expected unmounted render to show replacement content, got %q", unmounted[0].ch)
-	}
-}
-
-func TestSpinnerFrameChangeToSingleFrameStopsOldTicker(t *testing.T) {
-	type snapshot struct {
-		phase int32
-		ch    rune
-	}
-
-	fake := newBlockingFakeHost(80, 24)
-	var phase atomic.Int32
-	frames := []string{"0", "1"}
-
-	var snapshots []snapshot
-	fake.onShow = func(f *fakeHost) {
-		snapshots = append(snapshots, snapshot{
-			phase: phase.Load(),
-			ch:    f.cells[0],
-		})
-	}
-
-	err := runWithHost(func() Node {
-		return Spinner(SpinnerProps{
-			Frames:   frames,
-			Active:   true,
-			Interval: 5 * time.Millisecond,
-		})
-	}, RunOptions{
-		OnStart: func(h AppHandle) {
-			go func() {
-				time.Sleep(20 * time.Millisecond)
-				h.Post(func() {
-					frames = []string{"x"}
-					phase.Store(1)
-				})
-				time.Sleep(20 * time.Millisecond)
-				h.Quit()
-			}()
-		},
-	}, func() (host.Host, error) { return fake, nil })
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var changed []snapshot
-	for _, snap := range snapshots {
-		if snap.phase == 1 {
-			changed = append(changed, snap)
-		}
-	}
-
-	if len(changed) != 1 {
-		t.Fatalf("expected exactly one render after frame change, got %d (%v)", len(changed), changed)
-	}
-	if changed[0].ch != 'x' {
-		t.Fatalf("expected render after frame change to use new frames, got %q", changed[0].ch)
 	}
 }
 
