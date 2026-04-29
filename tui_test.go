@@ -1617,6 +1617,14 @@ func renderText(rt *runtime.Runtime, root Node, w, h int) string {
 	return string(runes)
 }
 
+func bufferText(buf *screen.Buffer) string {
+	runes := make([]rune, len(buf.Cells))
+	for i, cell := range buf.Cells {
+		runes[i] = cell.Rune
+	}
+	return string(runes)
+}
+
 func TestSpinnerDefaultRenderWithLabel(t *testing.T) {
 	rt := runtime.New()
 	got := renderText(rt, Spinner(SpinnerProps{
@@ -2412,6 +2420,387 @@ func TestSelectControlledUpdateRendersNewValue(t *testing.T) {
 
 	if !found {
 		t.Fatal("controlled Select should render updated selected label")
+	}
+}
+
+func TestSideTabsReturnsComponentNode(t *testing.T) {
+	got := SideTabs(SideTabsProps{})
+	if got.Kind != inode.ComponentKind {
+		t.Fatalf("SideTabs should return ComponentKind, got %v", got.Kind)
+	}
+}
+
+func TestSideTabsRendersSelectedContent(t *testing.T) {
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "settings",
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	text := bufferText(buf)
+
+	if !strings.Contains(text, "SETTINGS") {
+		t.Fatal("SideTabs should render selected tab content")
+	}
+	if strings.Contains(text, "HOME") {
+		t.Fatal("SideTabs should render only selected tab content")
+	}
+}
+
+func TestSideTabsUnknownValueFallsBackToFirstEnabledTab(t *testing.T) {
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "missing",
+		Tabs: []SideTab{
+			{Label: "Hidden", Value: "hidden", Content: Text("HIDDEN"), Disabled: true},
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	text := bufferText(buf)
+
+	if !strings.Contains(text, "HOME") {
+		t.Fatal("unknown SideTabs value should render first enabled tab content")
+	}
+	if strings.Contains(text, "HIDDEN") || strings.Contains(text, "SETTINGS") {
+		t.Fatal("unknown SideTabs value should render only first enabled tab content")
+	}
+}
+
+func TestSideTabsEmptyTabsDoesNotPanic(t *testing.T) {
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+}
+
+func TestSideTabsDownCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "home",
+		OnChange: func(v string) {
+			got = v
+		},
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if !consumed {
+		t.Fatal("Down should be consumed")
+	}
+	if got != "settings" {
+		t.Fatalf("OnChange = %q, want settings", got)
+	}
+}
+
+func TestSideTabsUpCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "settings",
+		OnChange: func(v string) {
+			got = v
+		},
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	})
+
+	if !consumed {
+		t.Fatal("Up should be consumed")
+	}
+	if got != "home" {
+		t.Fatalf("OnChange = %q, want home", got)
+	}
+}
+
+func TestSideTabsHomeEndCallsOnChange(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "settings",
+		OnChange: func(v string) {
+			got = v
+		},
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+			{Label: "Logs", Value: "logs", Content: Text("LOGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyHome},
+	}); !consumed {
+		t.Fatal("Home should be consumed")
+	}
+	if got != "home" {
+		t.Fatalf("Home: OnChange = %q, want home", got)
+	}
+
+	got = ""
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnd},
+	}); !consumed {
+		t.Fatal("End should be consumed")
+	}
+	if got != "logs" {
+		t.Fatalf("End: OnChange = %q, want logs", got)
+	}
+}
+
+func TestSideTabsMovementAtEdgesReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value:     "home",
+		OnChange:  func(string) {},
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyUp},
+	}); consumed {
+		t.Fatal("Up at first enabled tab should return false")
+	}
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyHome},
+	}); consumed {
+		t.Fatal("Home at first enabled tab should return false")
+	}
+
+	root = SideTabs(SideTabsProps{
+		Value:     "settings",
+		OnChange:  func(string) {},
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	rt.Update(root)
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	}); consumed {
+		t.Fatal("Down at last enabled tab should return false")
+	}
+	if consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyEnd},
+	}); consumed {
+		t.Fatal("End at last enabled tab should return false")
+	}
+}
+
+func TestSideTabsWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value:     "home",
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed {
+		t.Fatal("SideTabs without OnChange should return false")
+	}
+}
+
+func TestDisabledSideTabsDoesNotCallOnChange(t *testing.T) {
+	called := false
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value:    "home",
+		Disabled: true,
+		OnChange: func(string) {
+			called = true
+		},
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if consumed || called {
+		t.Fatal("Disabled SideTabs should not consume or call OnChange")
+	}
+}
+
+func TestSideTabsSkipsDisabledTabsWithKeyboard(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "home",
+		OnChange: func(v string) {
+			got = v
+		},
+		AutoFocus: true,
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS"), Disabled: true},
+			{Label: "Logs", Value: "logs", Content: Text("LOGS")},
+		},
+	})
+	updateUntilClean(rt, root)
+
+	consumed := rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+
+	if !consumed {
+		t.Fatal("Down should be consumed")
+	}
+	if got != "logs" {
+		t.Fatalf("OnChange = %q, want logs", got)
+	}
+}
+
+func TestSideTabsStylesActiveFocusedAndDisabledTabs(t *testing.T) {
+	rt := runtime.New()
+
+	root := SideTabs(SideTabsProps{
+		Value: "home",
+		Tabs: []SideTab{
+			{Label: "Home", Value: "home", Content: Text("HOME")},
+			{Label: "Settings", Value: "settings", Content: Text("SETTINGS"), Disabled: true},
+			{Label: "Logs", Value: "logs", Content: Text("LOGS")},
+		},
+		TabStyle:         Style{Width: Cells(20)},
+		ActiveTabStyle:   Style{Foreground: ANSIColor(2), Width: Cells(2)},
+		FocusedTabStyle:  Style{Bold: true},
+		DisabledTabStyle: Style{Faint: true},
+		AutoFocus:        true,
+	})
+	updateUntilClean(rt, root)
+	rt.RunLayout(80, 24)
+
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	active := buf.At(2, 0).Style
+	inactive := buf.At(2, 2).Style
+	disabled := buf.At(2, 1).Style
+
+	if active.Fg != ANSIColor(2) {
+		t.Fatal("active tab should use ActiveTabStyle")
+	}
+	if inactive.Fg == ANSIColor(2) {
+		t.Fatal("active tab style should not apply to inactive tabs")
+	}
+	if !active.Bold {
+		t.Fatal("focused tab style should apply to the active tab when focused")
+	}
+	if !disabled.Faint {
+		t.Fatal("disabled tab style should apply to disabled tabs")
+	}
+}
+
+func TestSideTabsControlledUpdateRendersNewContent(t *testing.T) {
+	rt := runtime.New()
+
+	form := func() Node {
+		value, setValue := UseState("home")
+		return SideTabs(SideTabsProps{
+			Value:     value,
+			OnChange:  setValue,
+			AutoFocus: true,
+			Tabs: []SideTab{
+				{Label: "Home", Value: "home", Content: Text("HOME")},
+				{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+			},
+		})
+	}
+
+	root := Component(form)
+	updateUntilClean(rt, root)
+
+	rt.HandleEvent(event.Event{
+		Kind: event.KeyKind,
+		Key:  event.Key{Key: tcell.KeyDown},
+	})
+	updateUntilClean(rt, root)
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+	text := bufferText(buf)
+
+	if !strings.Contains(text, "SETTINGS") {
+		t.Fatal("controlled SideTabs should render updated selected content")
+	}
+	if strings.Contains(text, "HOME") {
+		t.Fatal("controlled SideTabs should render only updated selected content")
 	}
 }
 

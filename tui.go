@@ -1257,6 +1257,38 @@ type SelectProps struct {
 	Disabled  bool
 }
 
+// SideTab configures a single SideTabs tab.
+type SideTab struct {
+	Label    string
+	Value    string
+	Content  Node
+	Disabled bool
+}
+
+// SideTabsProps configures a SideTabs widget.
+//
+// Value is the active tab value. OnChange receives the next tab value when the
+// user selects a different enabled tab. Disabled disables the whole component;
+// SideTab.Disabled disables only that tab.
+type SideTabsProps struct {
+	Tabs     []SideTab
+	Value    string
+	OnChange func(string)
+
+	Style Style
+
+	TabListStyle     Style
+	TabStyle         Style
+	ActiveTabStyle   Style
+	FocusedTabStyle  Style
+	DisabledTabStyle Style
+
+	PanelStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
 // Select creates a focusable widget that cycles through options.
 // It is controlled: it displays the label of the option matching Value and calls
 // OnChange with the next option value when pressed or navigated.
@@ -1351,6 +1383,188 @@ func Select(props SelectProps) Node {
 				},
 			},
 			Text(" < "+display+" > ", WithTextStyle(Style{FlexGrow: 1})),
+		)
+	})
+}
+
+func sideTabsSelectedIndex(tabs []SideTab, value string) int {
+	for i, tab := range tabs {
+		if tab.Value == value {
+			return i
+		}
+	}
+	return -1
+}
+
+func sideTabsFirstEnabledIndex(tabs []SideTab) int {
+	for i, tab := range tabs {
+		if !tab.Disabled {
+			return i
+		}
+	}
+	return -1
+}
+
+func sideTabsLastEnabledIndex(tabs []SideTab) int {
+	for i := len(tabs) - 1; i >= 0; i-- {
+		if !tabs[i].Disabled {
+			return i
+		}
+	}
+	return -1
+}
+
+func sideTabsNextEnabledIndex(tabs []SideTab, from int) int {
+	for i := from + 1; i < len(tabs); i++ {
+		if !tabs[i].Disabled {
+			return i
+		}
+	}
+	return -1
+}
+
+func sideTabsPrevEnabledIndex(tabs []SideTab, from int) int {
+	for i := from - 1; i >= 0; i-- {
+		if !tabs[i].Disabled {
+			return i
+		}
+	}
+	return -1
+}
+
+// SideTabs creates a focusable vertical tab list on the left and renders the
+// active tab's content in a panel on the right.
+//
+// It is controlled: pass the active tab value through Value and receive
+// changes through OnChange. The parent must update Value for the active panel
+// to change.
+//
+// Keyboard behavior:
+//   - Up/Down select the previous/next enabled tab.
+//   - Home/End select the first/last enabled tab.
+//   - Tab/Shift+Tab move focus out of the tab list.
+//
+// Only the active tab's Content is rendered. Inactive tab content is unmounted;
+// hoist state above SideTabs if tab-local state must persist across tab changes.
+func SideTabs(props SideTabsProps) Node {
+	return Component(func() Node {
+		focused := UseFocused()
+
+		active := sideTabsSelectedIndex(props.Tabs, props.Value)
+		if active < 0 {
+			active = sideTabsFirstEnabledIndex(props.Tabs)
+		}
+
+		selectIndex := func(i int) bool {
+			if props.Disabled || props.OnChange == nil || i < 0 || i >= len(props.Tabs) || props.Tabs[i].Disabled {
+				return false
+			}
+			next := props.Tabs[i].Value
+			if next == props.Value {
+				return true
+			}
+			props.OnChange(next)
+			return true
+		}
+
+		tabRows := make([]Node, len(props.Tabs))
+		for i, tab := range props.Tabs {
+			prefix := "  "
+			if i == active {
+				prefix = "> "
+			}
+
+			tabStyle := props.TabStyle
+			if i == active {
+				tabStyle = overlayVisualStyle(tabStyle, props.ActiveTabStyle)
+			}
+			if focused && i == active {
+				tabStyle = overlayVisualStyle(tabStyle, props.FocusedTabStyle)
+			}
+			if props.Disabled || tab.Disabled {
+				tabStyle = overlayVisualStyle(tabStyle, props.DisabledTabStyle)
+			}
+
+			idx := i
+			tabRows[i] = ViewWith(
+				ViewProps{
+					Style: tabStyle,
+					OnMouse: func(ev MouseEvent) bool {
+						if ev.Button&MouseLeft == 0 || ev.Action != MousePress || props.Disabled || props.OnChange == nil {
+							return false
+						}
+						if props.Tabs[idx].Disabled {
+							return false
+						}
+						if idx == active {
+							return true
+						}
+						return selectIndex(idx)
+					},
+				},
+				Text(prefix+tab.Label),
+			)
+		}
+
+		tabListStyle := props.TabListStyle
+		tabListStyle.Direction = Column
+		tabList := ViewWith(
+			ViewProps{
+				Style:     tabListStyle,
+				Focusable: !props.Disabled,
+				AutoFocus: props.AutoFocus,
+				Disabled:  props.Disabled,
+				OnKey: func(ev KeyEvent) bool {
+					if props.Disabled || props.OnChange == nil || len(props.Tabs) == 0 {
+						return false
+					}
+
+					switch ev.Key {
+					case KeyUp:
+						return selectIndex(sideTabsPrevEnabledIndex(props.Tabs, active))
+					case KeyDown:
+						return selectIndex(sideTabsNextEnabledIndex(props.Tabs, active))
+					case KeyHome:
+						first := sideTabsFirstEnabledIndex(props.Tabs)
+						if active == first {
+							return false
+						}
+						return selectIndex(first)
+					case KeyEnd:
+						last := sideTabsLastEnabledIndex(props.Tabs)
+						if active == last {
+							return false
+						}
+						return selectIndex(last)
+					}
+
+					return false
+				},
+			},
+			tabRows...,
+		)
+
+		panelStyle := props.PanelStyle
+		if panelStyle.FlexGrow == 0 && panelStyle.Width.Kind == DimAuto {
+			panelStyle.FlexGrow = 1
+		}
+
+		panelChildren := []Node{}
+		if active >= 0 && active < len(props.Tabs) && props.Tabs[active].Content != nil {
+			panelChildren = append(panelChildren, props.Tabs[active].Content)
+		}
+		panel := View(panelStyle, panelChildren...)
+
+		outerStyle := props.Style
+		if outerStyle.FlexGrow == 0 {
+			outerStyle.FlexGrow = 1
+		}
+		outerStyle.Direction = Row
+
+		return View(
+			outerStyle,
+			tabList,
+			panel,
 		)
 	})
 }

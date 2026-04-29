@@ -130,6 +130,112 @@ func TestRadioGroupMouseClickFocusAndSelect(t *testing.T) {
 	}
 }
 
+func TestSideTabsMouseClickSelectsTab(t *testing.T) {
+	selected := ""
+	app := func() Node {
+		return SideTabs(SideTabsProps{
+			Value: "home",
+			OnChange: func(v string) {
+				selected = v
+			},
+			Tabs: []SideTab{
+				{Label: "Home", Value: "home", Content: Text("HOME")},
+				{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+			},
+		})
+	}
+
+	events := []event.Event{
+		{
+			Kind: event.MouseKind,
+			Mouse: event.Mouse{
+				X:      0,
+				Y:      1,
+				Button: MouseLeft,
+			},
+		},
+	}
+	fake := newFakeHost(80, 24, events)
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if selected != "settings" {
+		t.Errorf("expected selected='settings', got %q", selected)
+	}
+}
+
+func TestSideTabsMouseClickDisabledTabDoesNothing(t *testing.T) {
+	selected := ""
+	app := func() Node {
+		return SideTabs(SideTabsProps{
+			Value: "home",
+			OnChange: func(v string) {
+				selected = v
+			},
+			Tabs: []SideTab{
+				{Label: "Home", Value: "home", Content: Text("HOME")},
+				{Label: "Settings", Value: "settings", Content: Text("SETTINGS"), Disabled: true},
+			},
+		})
+	}
+
+	events := []event.Event{
+		{
+			Kind: event.MouseKind,
+			Mouse: event.Mouse{
+				X:      0,
+				Y:      1,
+				Button: MouseLeft,
+			},
+		},
+	}
+	fake := newFakeHost(80, 24, events)
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if selected != "" {
+		t.Errorf("expected no selection for disabled tab, got %q", selected)
+	}
+}
+
+func TestDisabledSideTabsMouseClickDoesNothing(t *testing.T) {
+	selected := ""
+	app := func() Node {
+		return SideTabs(SideTabsProps{
+			Value: "home",
+			OnChange: func(v string) {
+				selected = v
+			},
+			Disabled: true,
+			Tabs: []SideTab{
+				{Label: "Home", Value: "home", Content: Text("HOME")},
+				{Label: "Settings", Value: "settings", Content: Text("SETTINGS")},
+			},
+		})
+	}
+
+	events := []event.Event{
+		{
+			Kind: event.MouseKind,
+			Mouse: event.Mouse{
+				X:      0,
+				Y:      1,
+				Button: MouseLeft,
+			},
+		},
+	}
+	fake := newFakeHost(80, 24, events)
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if selected != "" {
+		t.Errorf("expected no selection for disabled SideTabs, got %q", selected)
+	}
+}
+
 // TestTextInputUnfocusedFixedCursorAtStartOnClick verifies Ticket 2 fix:
 // when a fixed-width TextInput is unfocused, clicking near the start of the
 // visible area places the cursor at the beginning of the string, not near
