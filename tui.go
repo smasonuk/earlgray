@@ -1927,3 +1927,70 @@ func runWithHost(root func() Node, opts RunOptions, newHost hostFactory) error {
 		}
 	}
 }
+
+// ScrollableListItem configures a single ScrollableList row.
+type ScrollableListItem struct {
+	ID    string
+	Label string
+}
+
+// ScrollableListProps configures a bounded, selectable vertical list.
+type ScrollableListProps struct {
+	Items []ScrollableListItem
+
+	// Controlled selected index. The parent owns the selected item.
+	SelectedIndex int
+
+	// Called when the user selects, navigates to, or activates an item.
+	OnSelect func(int)
+
+	// Optional activation callback for Enter.
+	// If nil, Enter behaves like OnSelect(selectedIndex), if OnSelect exists.
+	OnActivate func(int)
+
+	// Optional fallback row count used when layout height is otherwise unconstrained.
+	// If <= 0, default to 8.
+	VisibleRows int
+
+	// Text displayed when Items is empty.
+	EmptyText string
+
+	// ShowFooter renders a footer such as "showing 1-8 of 30" when clipped.
+	ShowFooter bool
+
+	Style        Style
+	FocusedStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
+// ScrollableList creates a focusable bounded list with keyboard, wheel, and
+// click selection. It renders only the rows that fit in its allocated viewport.
+func ScrollableList(props ScrollableListProps) Node {
+	items := make([]inode.ScrollableListItem, len(props.Items))
+	for i, item := range props.Items {
+		items[i] = inode.ScrollableListItem{
+			ID:    item.ID,
+			Label: item.Label,
+		}
+	}
+
+	return &inode.Node{
+		Kind:      inode.ScrollableListKind,
+		Style:     props.Style,
+		Focusable: !props.Disabled,
+		AutoFocus: props.AutoFocus,
+		Disabled:  props.Disabled,
+		ScrollableListOpts: inode.ScrollableListOptions{
+			Items:         items,
+			SelectedIndex: props.SelectedIndex,
+			OnSelect:      props.OnSelect,
+			OnActivate:    props.OnActivate,
+			VisibleRows:   props.VisibleRows,
+			EmptyText:     props.EmptyText,
+			ShowFooter:    props.ShowFooter,
+			FocusedStyle:  props.FocusedStyle,
+		},
+	}
+}

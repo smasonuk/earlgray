@@ -10,14 +10,15 @@ import (
 type Kind int
 
 const (
-	ViewKind      Kind = iota // a container with style and children
-	TextKind                  // a leaf node with text content
-	RichTextKind              // a leaf node with multiple styled text spans
-	KeyedKind                 // wraps another node with an explicit key
-	ComponentKind             // a function component
-	OverlayKind               // stacks children on top of each other
-	TextPanelKind             // a scrollable text panel
-	TextAreaKind              // editable multi-line text area
+	ViewKind           Kind = iota // a container with style and children
+	TextKind                       // a leaf node with text content
+	RichTextKind                   // a leaf node with multiple styled text spans
+	KeyedKind                      // wraps another node with an explicit key
+	ComponentKind                  // a function component
+	OverlayKind                    // stacks children on top of each other
+	TextPanelKind                  // a scrollable text panel
+	TextAreaKind                   // editable multi-line text area
+	ScrollableListKind             // a bounded selectable scrollable list
 )
 
 // TextAlign controls text alignment within its container.
@@ -90,25 +91,44 @@ type TextAreaOptions struct {
 	ReadOnly bool
 }
 
+// ScrollableListItem holds one row for scrollable list nodes.
+type ScrollableListItem struct {
+	ID    string
+	Label string
+}
+
+// ScrollableListOptions holds options for bounded selectable lists.
+type ScrollableListOptions struct {
+	Items         []ScrollableListItem
+	SelectedIndex int
+	OnSelect      func(int)
+	OnActivate    func(int)
+	VisibleRows   int
+	EmptyText     string
+	ShowFooter    bool
+	FocusedStyle  style.Style
+}
+
 // Node is the internal concrete node type.
 type Node struct {
-	Kind          Kind
-	Key           string           // optional explicit key for reconciliation
-	Style         style.Style      // style (ViewKind)
-	Children      []*Node          // child nodes (ViewKind, KeyedKind)
-	Text          string           // text content (TextKind)
-	Spans         []TextSpan       // rich text spans (RichTextKind)
-	TextOpts      TextOptions      // text options (TextKind)
-	TextPanelOpts TextPanelOptions // text panel options (TextPanelKind)
-	TextAreaOpts  TextAreaOptions  // text area options (TextAreaKind)
-	CompFn        func() *Node     // component render function (ComponentKind)
-	CompID        uintptr          // identity of component function (for reconciliation)
-	OnKey         KeyHandler       // optional key handler (ViewKind)
-	OnKeyCapture  KeyCaptureHandler
-	OnMouse       MouseHandler // optional mouse handler (ViewKind)
-	Focusable     bool         // whether this node can receive focus
-	AutoFocus     bool         // request focus on initial mount if no other node is focused
-	Disabled      bool         // skip in focus traversal and key delivery
+	Kind               Kind
+	Key                string                // optional explicit key for reconciliation
+	Style              style.Style           // style (ViewKind)
+	Children           []*Node               // child nodes (ViewKind, KeyedKind)
+	Text               string                // text content (TextKind)
+	Spans              []TextSpan            // rich text spans (RichTextKind)
+	TextOpts           TextOptions           // text options (TextKind)
+	TextPanelOpts      TextPanelOptions      // text panel options (TextPanelKind)
+	TextAreaOpts       TextAreaOptions       // text area options (TextAreaKind)
+	ScrollableListOpts ScrollableListOptions // scrollable list options (ScrollableListKind)
+	CompFn             func() *Node          // component render function (ComponentKind)
+	CompID             uintptr               // identity of component function (for reconciliation)
+	OnKey              KeyHandler            // optional key handler (ViewKind)
+	OnKeyCapture       KeyCaptureHandler
+	OnMouse            MouseHandler // optional mouse handler (ViewKind)
+	Focusable          bool         // whether this node can receive focus
+	AutoFocus          bool         // request focus on initial mount if no other node is focused
+	Disabled           bool         // skip in focus traversal and key delivery
 
 	// FocusScope traps focus traversal within this view's subtree.
 	FocusScope bool

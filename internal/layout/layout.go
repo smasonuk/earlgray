@@ -2,6 +2,7 @@
 package layout
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -88,6 +89,11 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 
 	if nd.Kind == node.TextPanelKind || nd.Kind == node.TextAreaKind {
 		result := styledBoxResult(nd.Style, c, ox, oy)
+		return &Tree{Result: result}
+	}
+
+	if nd.Kind == node.ScrollableListKind {
+		result := scrollableListBoxResult(nd, c, ox, oy)
 		return &Tree{Result: result}
 	}
 
@@ -465,6 +471,10 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
 		return w, h
 
+	case node.ScrollableListKind:
+		w, h = measureScrollableListIntrinsic(nd, maxW, maxH)
+		return w, h
+
 	case node.ViewKind:
 		s := nd.Style
 		bIns := s.Border.Insets()
@@ -542,6 +552,71 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		return 0, 0
 	}
 	return 0, 0
+}
+
+func scrollableListBoxResult(nd *node.Node, c Constraints, ox, oy int) Result {
+	s := nd.Style
+	if s.Width.Kind != style.DimCells || (s.Height.Kind != style.DimCells && s.FlexGrow == 0) {
+		w, h := measureScrollableListIntrinsic(nd, c.MaxW, c.MaxH)
+		if s.Width.Kind != style.DimCells {
+			s.Width = style.Cells(w)
+		}
+		if s.Height.Kind != style.DimCells && s.FlexGrow == 0 {
+			s.Height = style.Cells(h)
+		}
+	}
+	return styledBoxResult(s, c, ox, oy)
+}
+
+func measureScrollableListIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
+	s := nd.Style
+	bIns := s.Border.Insets()
+	ins := addInsets(s.Padding, bIns)
+
+	contentW := 0
+	opts := nd.ScrollableListOpts
+	for _, item := range opts.Items {
+		width := runewidth.StringWidth("  " + item.Label)
+		if width > contentW {
+			contentW = width
+		}
+	}
+
+	visibleRows := opts.VisibleRows
+	if visibleRows <= 0 {
+		visibleRows = 8
+	}
+
+	footerRows := 0
+	if opts.ShowFooter && len(opts.Items) > visibleRows {
+		footerRows = 1
+		footer := fmt.Sprintf("showing %d-%d of %d", 1, visibleRows, len(opts.Items))
+		if width := runewidth.StringWidth(footer); width > contentW {
+			contentW = width
+		}
+	}
+
+	if len(opts.Items) == 0 {
+		empty := opts.EmptyText
+		if empty == "" {
+			empty = "No items."
+		}
+		contentW = runewidth.StringWidth(empty)
+	}
+
+	contentH := visibleRows + footerRows
+	w = contentW + ins.Left + ins.Right
+	h = contentH + ins.Top + ins.Bottom
+
+	if s.Width.Kind == style.DimCells {
+		w = s.Width.Value
+	}
+	if s.Height.Kind == style.DimCells {
+		h = s.Height.Value
+	}
+
+	w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
+	return w, h
 }
 
 func applyMeasuredMinMaxAndClamp(s style.Style, w, h, maxW, maxH int) (int, int) {
