@@ -76,3 +76,48 @@ func TestRunWithHostForwardsPasteToFocusedTextArea(t *testing.T) {
 		t.Fatalf("pasted text mismatch:\nwant %q\ngot  %q", want, observed)
 	}
 }
+
+func TestRunWithHostForwardsPasteToFocusedTextInput(t *testing.T) {
+	events := make(chan event.Event, 2)
+	events <- event.Event{
+		Kind: event.PasteKind,
+		Paste: event.Paste{
+			Text: "https://portkey.syngenta.com/v1",
+		},
+	}
+	events <- event.Event{Kind: event.QuitKind}
+
+	testHost := &pasteTestHost{events: events}
+
+	var observed string
+
+	err := runWithHost(
+		func() Node {
+			return Component(func() Node {
+				value, setValue := UseState("")
+
+				return TextInput(TextInputProps{
+					Value:     value,
+					AutoFocus: true,
+					OnChange: func(next string) {
+						observed = next
+						setValue(next)
+					},
+				})
+			})
+		},
+		RunOptions{},
+		func() (host.Host, error) {
+			return testHost, nil
+		},
+	)
+
+	if err != nil {
+		t.Fatalf("runWithHost returned error: %v", err)
+	}
+
+	want := "https://portkey.syngenta.com/v1"
+	if observed != want {
+		t.Fatalf("pasted text mismatch:\nwant %q\ngot  %q", want, observed)
+	}
+}

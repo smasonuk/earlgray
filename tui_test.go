@@ -784,6 +784,58 @@ func TestTextInputTypingWideRuneInsertsAtCursor(t *testing.T) {
 	}
 }
 
+func TestTextInputPasteInsertsAtCursor(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{
+		Value: "ac",
+		OnChange: func(next string) {
+			got = next
+		},
+	}))
+	updateUntilClean(rt, root)
+	rt.HandleEvent(event.Event{Kind: event.KeyKind, Key: event.Key{Key: tcell.KeyLeft}})
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{Kind: event.PasteKind, Paste: event.Paste{Text: "b界"}})
+
+	if !consumed {
+		t.Fatal("Paste should be consumed")
+	}
+	if got != "ab界c" {
+		t.Fatalf("Paste insert failed, got %q want ab界c", got)
+	}
+}
+
+func TestTextInputPasteNormalizesNewlinesForSingleLineInput(t *testing.T) {
+	got := ""
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{
+		Value: "hello",
+		OnChange: func(next string) {
+			got = next
+		},
+	}))
+	updateUntilClean(rt, root)
+	consumed := rt.HandleEvent(event.Event{Kind: event.PasteKind, Paste: event.Paste{Text: " one\r\ntwo\rthree"}})
+
+	if !consumed {
+		t.Fatal("Paste should be consumed")
+	}
+	if got != "hello one two three" {
+		t.Fatalf("Paste newline normalization failed, got %q", got)
+	}
+}
+
+func TestTextInputPasteWithoutOnChangeReturnsFalse(t *testing.T) {
+	rt := runtime.New()
+	root := View(Style{Direction: Column}, TextInput(TextInputProps{Value: "abc"}))
+	updateUntilClean(rt, root)
+
+	if consumed := rt.HandleEvent(event.Event{Kind: event.PasteKind, Paste: event.Paste{Text: "x"}}); consumed {
+		t.Fatal("Paste without OnChange should return false")
+	}
+}
+
 func TestTextInputBackspaceDeletesBeforeCursor(t *testing.T) {
 	got := ""
 	rt := runtime.New()
@@ -895,6 +947,33 @@ func TestTextInputPlaceholderCursorStartsAtContentStart(t *testing.T) {
 
 	if got := buf.At(1, 1).Rune; got != 'T' {
 		t.Fatalf("placeholder should start at (1,1), got %q", got)
+	}
+	if got := buf.At(1, 1).Style.Fg; got != ANSIColor(8) {
+		t.Fatalf("placeholder foreground = %v, want gray", got)
+	}
+}
+
+func TestTextInputPlaceholderStyleCanBeOverridden(t *testing.T) {
+	rt := runtime.New()
+
+	inputNode := TextInput(TextInputProps{
+		Value:            "",
+		Placeholder:      "Type here",
+		PlaceholderStyle: Style{Foreground: ANSIColor(5)},
+		Style: Style{
+			Border: BorderAll,
+		},
+	})
+	root := View(Style{Direction: Column}, inputNode)
+
+	updateUntilClean(rt, root)
+
+	rt.RunLayout(80, 24)
+	buf := screen.NewBuffer(80, 24)
+	rt.Render(buf)
+
+	if got := buf.At(1, 1).Style.Fg; got != ANSIColor(5) {
+		t.Fatalf("placeholder foreground = %v, want override", got)
 	}
 }
 

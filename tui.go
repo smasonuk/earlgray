@@ -127,6 +127,7 @@ type ViewProps struct {
 	OnKey        func(KeyEvent) bool
 	OnKeyCapture func(KeyEvent) bool
 	OnMouse      func(MouseEvent) bool
+	OnPaste      func(string) bool
 	Focusable    bool
 	AutoFocus    bool
 	Disabled     bool
@@ -144,6 +145,7 @@ func ViewWith(props ViewProps, children ...Node) Node {
 		OnKey:        props.OnKey,
 		OnKeyCapture: props.OnKeyCapture,
 		OnMouse:      props.OnMouse,
+		OnPaste:      props.OnPaste,
 		Focusable:    props.Focusable,
 		AutoFocus:    props.AutoFocus,
 		Disabled:     props.Disabled,
@@ -674,6 +676,10 @@ type TextInputProps struct {
 	// are intentionally ignored.
 	FocusedStyle Style
 
+	// PlaceholderStyle overlays visual attributes when Value is empty and the
+	// placeholder text is shown. Empty defaults to a muted gray foreground.
+	PlaceholderStyle Style
+
 	AutoFocus bool
 	Disabled  bool
 }
@@ -751,6 +757,15 @@ func textInputVisibleValue(value string, cursorRuneIndex int, contentWidth int, 
 	return vis, cursorX
 }
 
+func textInputPlaceholderStyle(base Style, placeholder Style) Style {
+	if placeholder.Foreground.IsSpecified() || placeholder.Background.IsSpecified() ||
+		placeholder.Bold || placeholder.Italic || placeholder.Underline ||
+		placeholder.Faint || placeholder.Strikethrough || placeholder.Reverse {
+		return overlayVisualStyle(base, placeholder)
+	}
+	return overlayVisualStyle(base, Style{Foreground: ANSIColor(8)})
+}
+
 // TextInput creates a focusable single-line text input.
 // It is a controlled component: pass the current value through Value and receive
 // edits through OnChange. The parent is responsible for updating state.
@@ -773,7 +788,8 @@ func TextInput(props TextInputProps) Node {
 		cursor = clampInt(cursor, 0, len(runes))
 
 		displayValue := props.Value
-		if displayValue == "" {
+		placeholderVisible := displayValue == ""
+		if placeholderVisible {
 			displayValue = props.Placeholder
 		}
 
@@ -785,6 +801,10 @@ func TextInput(props TextInputProps) Node {
 				displayValue += " "
 			}
 			cursorX = runewidth.StringWidth(string(runes[:cursor]))
+		}
+		textStyle := Style{FlexGrow: 1}
+		if placeholderVisible {
+			textStyle = textInputPlaceholderStyle(textStyle, props.PlaceholderStyle)
 		}
 
 		nd := ViewWith(
@@ -828,6 +848,23 @@ func TextInput(props TextInputProps) Node {
 						x += rw
 					}
 					setCursor(len(runes))
+					return true
+				},
+				OnPaste: func(text string) bool {
+					if props.Disabled || props.OnChange == nil {
+						return false
+					}
+					pasted := sanitizeTextInputPaste(text)
+					if pasted == "" {
+						return false
+					}
+					pastedRunes := []rune(pasted)
+					nextRunes := make([]rune, 0, len(runes)+len(pastedRunes))
+					nextRunes = append(nextRunes, runes[:cursor]...)
+					nextRunes = append(nextRunes, pastedRunes...)
+					nextRunes = append(nextRunes, runes[cursor:]...)
+					props.OnChange(string(nextRunes))
+					setCursor(cursor + len(pastedRunes))
 					return true
 				},
 				Focusable: !props.Disabled,
@@ -911,7 +948,7 @@ func TextInput(props TextInputProps) Node {
 					return false
 				},
 			},
-			Text(displayValue, WithTextStyle(Style{FlexGrow: 1})),
+			Text(displayValue, WithTextStyle(textStyle)),
 		)
 
 		if focused && !props.Disabled {
@@ -922,6 +959,13 @@ func TextInput(props TextInputProps) Node {
 
 		return nd
 	})
+}
+
+func sanitizeTextInputPaste(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	text = strings.ReplaceAll(text, "\n", " ")
+	return text
 }
 
 // TextAreaProps configures a TextArea widget.

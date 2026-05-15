@@ -424,6 +424,17 @@ func (r *Runtime) handlePaste(text string) bool {
 	if r.focused.nd != nil && r.focused.nd.Kind == node.TextAreaKind && !r.focused.nd.Disabled {
 		return handleTextAreaPaste(r.focused, text)
 	}
+	root := activeFocusRoot(r.root)
+	for inst := r.focused; inst != nil; inst = inst.parent {
+		if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnPaste != nil {
+			if inst.nd.OnPaste(text) {
+				return true
+			}
+		}
+		if inst == root {
+			break
+		}
+	}
 	return false
 }
 

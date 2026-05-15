@@ -42,6 +42,9 @@ type KeyCaptureHandler func(KeyPress) bool
 // MouseHandler processes a mouse event. Returns true if the event was consumed.
 type MouseHandler func(input.MousePress) bool
 
+// PasteHandler processes pasted text. Returns true if the event was consumed.
+type PasteHandler func(string) bool
+
 // TextOptions holds options for text nodes.
 type TextOptions struct {
 	Align TextAlign
@@ -126,6 +129,7 @@ type Node struct {
 	OnKey              KeyHandler            // optional key handler (ViewKind)
 	OnKeyCapture       KeyCaptureHandler
 	OnMouse            MouseHandler // optional mouse handler (ViewKind)
+	OnPaste            PasteHandler // optional paste handler (ViewKind)
 	Focusable          bool         // whether this node can receive focus
 	AutoFocus          bool         // request focus on initial mount if no other node is focused
 	Disabled           bool         // skip in focus traversal and key delivery
