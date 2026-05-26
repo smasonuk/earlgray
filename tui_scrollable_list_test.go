@@ -265,6 +265,42 @@ func TestScrollableListMouseClickSelectsVisibleRow(t *testing.T) {
 	}
 }
 
+func TestScrollableListMouseClickUsesOnClickWhenProvided(t *testing.T) {
+	selected := -1
+	clicked := -1
+	app := func() Node {
+		return ScrollableList(ScrollableListProps{
+			Items:         scrollableListTestItems(10),
+			SelectedIndex: 5,
+			VisibleRows:   3,
+			OnSelect:      func(i int) { selected = i },
+			OnClick:       func(i int) { clicked = i },
+		})
+	}
+
+	events := []event.Event{
+		{
+			Kind: event.MouseKind,
+			Mouse: event.Mouse{
+				X:      0,
+				Y:      1,
+				Button: MouseLeft,
+			},
+		},
+	}
+	fake := newFakeHost(80, 24, events)
+	if err := runWithHost(app, RunOptions{}, func() (host.Host, error) { return fake, nil }); err != nil {
+		t.Fatal(err)
+	}
+
+	if clicked != 4 {
+		t.Fatalf("clicked = %d, want 4", clicked)
+	}
+	if selected != -1 {
+		t.Fatalf("OnSelect should not be called when OnClick exists, got %d", selected)
+	}
+}
+
 func TestDisabledScrollableListIgnoresKeyboardAndMouse(t *testing.T) {
 	called := false
 	rt := runtime.New()

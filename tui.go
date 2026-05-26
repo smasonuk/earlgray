@@ -1992,6 +1992,10 @@ type ScrollableListProps struct {
 	// If nil, Enter behaves like OnSelect(selectedIndex), if OnSelect exists.
 	OnActivate func(int)
 
+	// Optional click callback for mouse activation.
+	// If nil, click behaves like OnSelect(clickedIndex), preserving List-style selection.
+	OnClick func(int)
+
 	// Optional fallback row count used when layout height is otherwise unconstrained.
 	// If <= 0, default to 8.
 	VisibleRows int
@@ -2031,6 +2035,7 @@ func ScrollableList(props ScrollableListProps) Node {
 			SelectedIndex: props.SelectedIndex,
 			OnSelect:      props.OnSelect,
 			OnActivate:    props.OnActivate,
+			OnClick:       props.OnClick,
 			VisibleRows:   props.VisibleRows,
 			EmptyText:     props.EmptyText,
 			ShowFooter:    props.ShowFooter,

@@ -91,7 +91,7 @@ func scrollableListActivate(inst *Instance) bool {
 func handleScrollableListClick(inst *Instance, localY int) bool {
 	opts := inst.nd.ScrollableListOpts
 	count := len(opts.Items)
-	if inst.nd.Disabled || count == 0 || opts.OnSelect == nil {
+	if inst.nd.Disabled || count == 0 || (opts.OnClick == nil && opts.OnSelect == nil) {
 		return false
 	}
 
@@ -103,6 +103,11 @@ func handleScrollableListClick(inst *Instance, localY int) bool {
 	index := inst.scrollY + localY
 	if index < 0 || index >= count {
 		return false
+	}
+
+	if opts.OnClick != nil {
+		opts.OnClick(index)
+		return true
 	}
 
 	opts.OnSelect(index)

@@ -106,6 +106,7 @@ type ScrollableListOptions struct {
 	SelectedIndex int
 	OnSelect      func(int)
 	OnActivate    func(int)
+	OnClick       func(int)
 	VisibleRows   int
 	EmptyText     string
 	ShowFooter    bool
