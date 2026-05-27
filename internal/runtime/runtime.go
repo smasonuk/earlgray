@@ -288,7 +288,7 @@ func buildSyntheticNode(inst *Instance) *node.Node {
 			synth.Children[i] = buildSyntheticNode(child)
 		}
 		return &synth
-	default: // TextKind, RichTextKind, TextPanelKind, TextAreaKind, ScrollableListKind
+	default: // TextKind, RichTextKind, TextPanelKind, TextAreaKind, ScrollableListKind, ScrollableTreeKind
 		return inst.nd
 	}
 }
@@ -397,6 +397,14 @@ func (r *Runtime) HandleEvent(ev event.Event) bool {
 			return true
 		}
 
+		if r.focused.nd != nil &&
+			r.focused.nd.Kind == node.ScrollableTreeKind &&
+			!r.focused.nd.Disabled &&
+			handleScrollableTreeKey(r.focused, press) {
+			r.MarkDirty()
+			return true
+		}
+
 		for inst := r.focused; inst != nil; inst = inst.parent {
 			if inst.nd != nil && !inst.nd.Disabled && inst.nd.OnKey != nil {
 				if inst.nd.OnKey(press) {
@@ -485,6 +493,13 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 				}
 				break
 			}
+			if ta.nd != nil && ta.nd.Kind == node.ScrollableTreeKind && !ta.nd.Disabled {
+				if handleScrollableTreeClick(ta, m.X-ta.layout.Content.X, m.Y-ta.layout.Content.Y) {
+					r.MarkDirty()
+					consumed = true
+				}
+				break
+			}
 			if ta == focusRoot {
 				break
 			}
@@ -556,6 +571,20 @@ func (r *Runtime) handleMouse(m event.Mouse) bool {
 					press = input.KeyPress{Key: input.KeyDown}
 				}
 				if handleScrollableListKey(tp, press) {
+					r.MarkDirty()
+					consumed = true
+				}
+				break
+			}
+
+			if tp.nd != nil && tp.nd.Kind == node.ScrollableTreeKind && !tp.nd.Disabled {
+				var press input.KeyPress
+				if m.Button&input.MouseWheelUp != 0 {
+					press = input.KeyPress{Key: input.KeyUp}
+				} else {
+					press = input.KeyPress{Key: input.KeyDown}
+				}
+				if handleScrollableTreeKey(tp, press) {
 					r.MarkDirty()
 					consumed = true
 				}
@@ -899,6 +928,9 @@ func mount(rt *Runtime, parent *Instance, n *node.Node) *Instance {
 	if n.Kind == node.ScrollableListKind {
 		resetScrollableListState(inst)
 	}
+	if n.Kind == node.ScrollableTreeKind {
+		resetScrollableTreeState(inst)
+	}
 
 	// For component nodes, render the component and mount its output.
 	if n.Kind == node.ComponentKind {
@@ -1147,6 +1179,19 @@ func renderInstance(inst *Instance, buf *screen.Buffer, inherited style.Style, c
 		drawBorders(buf, r, s.Border, fillStyle)
 
 		renderScrollableList(inst, buf, content, s)
+		return
+	}
+
+	if inst.nd.Kind == node.ScrollableTreeKind {
+		s := style.MergeVisual(inherited, inst.nd.Style)
+		if inst.runtime != nil && inst.runtime.focused == inst {
+			s = overlayRuntimeVisualStyle(s, inst.nd.ScrollableTreeOpts.FocusedStyle)
+		}
+		fillStyle := screenCellStyleFromStyle(s)
+		buf.FillRect(r.X, r.Y, r.W, r.H, ' ', fillStyle)
+		drawBorders(buf, r, s.Border, fillStyle)
+
+		renderScrollableTree(inst, buf, content, s)
 		return
 	}
 

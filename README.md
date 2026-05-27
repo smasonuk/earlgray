@@ -239,9 +239,65 @@ return tui.Overlay(
 
 See `examples/dialog` for a full working example with a `TextInput`, Submit, and Cancel buttons.
 
+## ScrollableTree
+
+`tui.ScrollableTree` is a controlled, bounded file/folder tree. The parent owns
+the selected node, expanded branches, checked nodes, and filesystem/cache lookup.
+`GetChildren` should return only the immediate children for the requested folder;
+the tree handles viewport rendering and expansion interpretation without
+materializing every possible descendant.
+
+```go
+func FileBrowser() tui.Node {
+    selected, setSelected := tui.UseState("")
+    expanded, _, updateExpanded := tui.UseStateWithUpdater(map[string]bool{})
+    checked, _, updateChecked := tui.UseStateWithUpdater(map[string]bool{})
+
+    childrenByID := loadOrCacheChildrenSomewhere()
+
+    return tui.ScrollableTree(tui.ScrollableTreeProps{
+        Roots: []tui.ScrollableTreeItem{
+            {ID: "/", Label: "/", IsBranch: true},
+        },
+        SelectedID: selected,
+        Expanded:   expanded,
+        Checked:    checked,
+
+        GetChildren: func(id string) []tui.ScrollableTreeItem {
+            return childrenByID(id)
+        },
+
+        OnSelect: setSelected,
+
+        OnExpandedChange: func(id string, open bool) {
+            updateExpanded(func(m map[string]bool) map[string]bool {
+                next := cloneBoolMap(m)
+                next[id] = open
+                return next
+            })
+        },
+
+        OnCheckedChange: func(id string, value bool) {
+            updateChecked(func(m map[string]bool) map[string]bool {
+                next := cloneBoolMap(m)
+                next[id] = value
+                return next
+            })
+        },
+
+        Style: tui.Style{FlexGrow: 1},
+    })
+}
+```
+
+Collapsed branches do not call `GetChildren`, so a `Roots` slice can stay small
+even when the underlying filesystem is large. Cache directory enumeration in the
+caller if it is expensive; the tree does not keep a global child cache.
+
 ## Known limitations
 
-- Mouse input is not supported.
+- Mouse input is available for built-in controls and `OnMouse`, but terminal
+  mouse reporting varies by host.
 - Text does not wrap; long lines are clipped to the content rect.
 - Flexbox is a subset: `FlexGrow` is implemented. `FlexShrink` is reserved and
   has no effect. No `min-content` sizing, `flex-basis`, or wrapping.

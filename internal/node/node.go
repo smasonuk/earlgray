@@ -19,6 +19,7 @@ const (
 	TextPanelKind                  // a scrollable text panel
 	TextAreaKind                   // editable multi-line text area
 	ScrollableListKind             // a bounded selectable scrollable list
+	ScrollableTreeKind             // a bounded selectable checkable scrollable tree
 )
 
 // TextAlign controls text alignment within its container.
@@ -113,6 +114,35 @@ type ScrollableListOptions struct {
 	FocusedStyle  style.Style
 }
 
+// ScrollableTreeItem holds one logical tree node for scrollable tree nodes.
+type ScrollableTreeItem struct {
+	ID       string
+	Label    string
+	IsBranch bool
+	Disabled bool
+}
+
+// ScrollableTreeOptions holds options for bounded selectable checkable trees.
+type ScrollableTreeOptions struct {
+	Roots []ScrollableTreeItem
+
+	SelectedID string
+	Expanded   map[string]bool
+	Checked    map[string]bool
+
+	GetChildren func(string) []ScrollableTreeItem
+
+	OnSelect         func(string)
+	OnActivate       func(string)
+	OnExpandedChange func(string, bool)
+	OnCheckedChange  func(string, bool)
+
+	VisibleRows  int
+	EmptyText    string
+	ShowFooter   bool
+	FocusedStyle style.Style
+}
+
 // Node is the internal concrete node type.
 type Node struct {
 	Kind               Kind
@@ -125,6 +155,7 @@ type Node struct {
 	TextPanelOpts      TextPanelOptions      // text panel options (TextPanelKind)
 	TextAreaOpts       TextAreaOptions       // text area options (TextAreaKind)
 	ScrollableListOpts ScrollableListOptions // scrollable list options (ScrollableListKind)
+	ScrollableTreeOpts ScrollableTreeOptions // scrollable tree options (ScrollableTreeKind)
 	CompFn             func() *Node          // component render function (ComponentKind)
 	CompID             uintptr               // identity of component function (for reconciliation)
 	OnKey              KeyHandler            // optional key handler (ViewKind)

@@ -97,6 +97,11 @@ func layoutNode(nd *node.Node, c Constraints, ox, oy int) *Tree {
 		return &Tree{Result: result}
 	}
 
+	if nd.Kind == node.ScrollableTreeKind {
+		result := scrollableTreeBoxResult(nd, c, ox, oy)
+		return &Tree{Result: result}
+	}
+
 	// Text nodes: size is determined by constraints.
 	if nd.Kind == node.TextKind || nd.Kind == node.RichTextKind {
 		w := c.MaxW
@@ -475,6 +480,10 @@ func measureIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 		w, h = measureScrollableListIntrinsic(nd, maxW, maxH)
 		return w, h
 
+	case node.ScrollableTreeKind:
+		w, h = measureScrollableTreeIntrinsic(nd, maxW, maxH)
+		return w, h
+
 	case node.ViewKind:
 		s := nd.Style
 		bIns := s.Border.Insets()
@@ -617,6 +626,129 @@ func measureScrollableListIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
 
 	w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
 	return w, h
+}
+
+func scrollableTreeBoxResult(nd *node.Node, c Constraints, ox, oy int) Result {
+	s := nd.Style
+	if s.Width.Kind != style.DimCells || (s.Height.Kind != style.DimCells && s.FlexGrow == 0) {
+		w, h := measureScrollableTreeIntrinsic(nd, c.MaxW, c.MaxH)
+		if s.Width.Kind != style.DimCells {
+			s.Width = style.Cells(w)
+		}
+		if s.Height.Kind != style.DimCells && s.FlexGrow == 0 {
+			s.Height = style.Cells(h)
+		}
+	}
+	return styledBoxResult(s, c, ox, oy)
+}
+
+func measureScrollableTreeIntrinsic(nd *node.Node, maxW, maxH int) (w, h int) {
+	s := nd.Style
+	bIns := s.Border.Insets()
+	ins := addInsets(s.Padding, bIns)
+
+	opts := nd.ScrollableTreeOpts
+	rows := layoutScrollableTreeVisibleRows(opts)
+
+	contentW := 0
+	for _, row := range rows {
+		width := runewidth.StringWidth(scrollableTreeMeasuredRowText(row, opts))
+		if width > contentW {
+			contentW = width
+		}
+	}
+
+	visibleRows := opts.VisibleRows
+	if visibleRows <= 0 {
+		visibleRows = 8
+	}
+
+	footerRows := 0
+	if opts.ShowFooter && len(rows) > visibleRows {
+		footerRows = 1
+		footer := fmt.Sprintf("showing %d-%d of %d", 1, visibleRows, len(rows))
+		if width := runewidth.StringWidth(footer); width > contentW {
+			contentW = width
+		}
+	}
+
+	if len(rows) == 0 {
+		empty := opts.EmptyText
+		if empty == "" {
+			empty = "No items."
+		}
+		contentW = runewidth.StringWidth(empty)
+	}
+
+	contentH := visibleRows + footerRows
+	w = contentW + ins.Left + ins.Right
+	h = contentH + ins.Top + ins.Bottom
+
+	if s.Width.Kind == style.DimCells {
+		w = s.Width.Value
+	}
+	if s.Height.Kind == style.DimCells {
+		h = s.Height.Value
+	}
+
+	w, h = applyMeasuredMinMaxAndClamp(s, w, h, maxW, maxH)
+	return w, h
+}
+
+type layoutScrollableTreeRow struct {
+	item  node.ScrollableTreeItem
+	depth int
+}
+
+func layoutScrollableTreeVisibleRows(opts node.ScrollableTreeOptions) []layoutScrollableTreeRow {
+	var rows []layoutScrollableTreeRow
+
+	var walk func(item node.ScrollableTreeItem, depth int, ancestors []string)
+	walk = func(item node.ScrollableTreeItem, depth int, ancestors []string) {
+		rows = append(rows, layoutScrollableTreeRow{item: item, depth: depth})
+		if !item.IsBranch || !opts.Expanded[item.ID] || opts.GetChildren == nil {
+			return
+		}
+
+		nextAncestors := append(ancestors, item.ID)
+		for _, child := range opts.GetChildren(item.ID) {
+			if layoutScrollableTreeContainsID(nextAncestors, child.ID) {
+				continue
+			}
+			walk(child, depth+1, nextAncestors)
+		}
+	}
+
+	for _, root := range opts.Roots {
+		walk(root, 0, nil)
+	}
+	return rows
+}
+
+func scrollableTreeMeasuredRowText(row layoutScrollableTreeRow, opts node.ScrollableTreeOptions) string {
+	disclosure := "  "
+	if row.item.IsBranch {
+		disclosure = "▸ "
+		if opts.Expanded[row.item.ID] {
+			disclosure = "▾ "
+		}
+	}
+
+	checkbox := "[ ] "
+	if opts.Checked[row.item.ID] {
+		checkbox = "[x] "
+	}
+
+	return "  " + strings.Repeat(" ", row.depth*2) + disclosure + checkbox + row.item.Label
+}
+
+func layoutScrollableTreeContainsID(values []string, id string) bool {
+	for _, value := range values {
+		if value == id {
+			return true
+		}
+	}
+	return false
 }
 
 func applyMeasuredMinMaxAndClamp(s style.Style, w, h, maxW, maxH int) (int, int) {

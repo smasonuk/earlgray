@@ -2013,6 +2013,51 @@ type ScrollableListProps struct {
 	Disabled  bool
 }
 
+// ScrollableTreeItem configures one logical tree node.
+type ScrollableTreeItem struct {
+	ID       string
+	Label    string
+	IsBranch bool
+	Disabled bool
+}
+
+// ScrollableTreeProps configures a bounded, selectable, checkable tree.
+//
+// The tree is controlled:
+//   - SelectedID controls the highlighted row.
+//   - Expanded controls which branch nodes are open.
+//   - Checked controls which nodes are checked.
+//   - The parent updates those maps/IDs in response to callbacks.
+//
+// Children are lazy:
+//   - Roots supplies only the top-level items.
+//   - GetChildren is called only for expanded branch nodes.
+//   - Collapsed branches must not call GetChildren.
+type ScrollableTreeProps struct {
+	Roots []ScrollableTreeItem
+
+	SelectedID string
+	Expanded   map[string]bool
+	Checked    map[string]bool
+
+	GetChildren func(id string) []ScrollableTreeItem
+
+	OnSelect         func(id string)
+	OnActivate       func(id string)
+	OnExpandedChange func(id string, expanded bool)
+	OnCheckedChange  func(id string, checked bool)
+
+	VisibleRows int
+	EmptyText   string
+	ShowFooter  bool
+
+	Style        Style
+	FocusedStyle Style
+
+	AutoFocus bool
+	Disabled  bool
+}
+
 // ScrollableList creates a focusable bounded list with keyboard, wheel, and
 // click selection. It renders only the rows that fit in its allocated viewport.
 func ScrollableList(props ScrollableListProps) Node {
@@ -2040,6 +2085,60 @@ func ScrollableList(props ScrollableListProps) Node {
 			EmptyText:     props.EmptyText,
 			ShowFooter:    props.ShowFooter,
 			FocusedStyle:  props.FocusedStyle,
+		},
+	}
+}
+
+// ScrollableTree creates a focusable bounded tree with lazy children, keyboard,
+// wheel, and click selection/checking. It renders only the visible viewport rows.
+func ScrollableTree(props ScrollableTreeProps) Node {
+	roots := make([]inode.ScrollableTreeItem, len(props.Roots))
+	for i, item := range props.Roots {
+		roots[i] = inode.ScrollableTreeItem{
+			ID:       item.ID,
+			Label:    item.Label,
+			IsBranch: item.IsBranch,
+			Disabled: item.Disabled,
+		}
+	}
+
+	var getChildren func(string) []inode.ScrollableTreeItem
+	if props.GetChildren != nil {
+		getChildren = func(id string) []inode.ScrollableTreeItem {
+			children := props.GetChildren(id)
+			out := make([]inode.ScrollableTreeItem, len(children))
+			for i, item := range children {
+				out[i] = inode.ScrollableTreeItem{
+					ID:       item.ID,
+					Label:    item.Label,
+					IsBranch: item.IsBranch,
+					Disabled: item.Disabled,
+				}
+			}
+			return out
+		}
+	}
+
+	return &inode.Node{
+		Kind:      inode.ScrollableTreeKind,
+		Style:     props.Style,
+		Focusable: !props.Disabled,
+		AutoFocus: props.AutoFocus,
+		Disabled:  props.Disabled,
+		ScrollableTreeOpts: inode.ScrollableTreeOptions{
+			Roots:            roots,
+			SelectedID:       props.SelectedID,
+			Expanded:         props.Expanded,
+			Checked:          props.Checked,
+			GetChildren:      getChildren,
+			OnSelect:         props.OnSelect,
+			OnActivate:       props.OnActivate,
+			OnExpandedChange: props.OnExpandedChange,
+			OnCheckedChange:  props.OnCheckedChange,
+			VisibleRows:      props.VisibleRows,
+			EmptyText:        props.EmptyText,
+			ShowFooter:       props.ShowFooter,
+			FocusedStyle:     props.FocusedStyle,
 		},
 	}
 }
